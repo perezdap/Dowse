@@ -169,7 +169,17 @@ Both extractors are pure-stdlib (no PyYAML, no Markdown parser): they scan struc
 
 PowerShell needs no `name` field handling out of the box — the grammar puts identifiers in `function_name`/`simple_name` children, which the registry resolves via `name_child_types`.
 
-**Available as one-line additions** (standard node names, install the extra and verify on a sample first): JavaScript, TypeScript, Go, Rust, Bash. Install via the extras, e.g. `pip install dowse[go,rust]`.
+**Optional grammars** (install the extra; verified node names): JavaScript, TypeScript, Go, Rust, Bash. Install via the extras, e.g. `pip install dowse[go,rust]`, or grab them all with `pip install "dowse[all-langs]"`.
+
+| Language   | Extensions   | Extra           | Wheel                    | Notes                                                       |
+|------------|--------------|-----------------|--------------------------|-------------------------------------------------------------|
+| JavaScript | `.js` `.jsx` `.mjs` `.cjs` | `javascript` | `tree-sitter-javascript` | function/method/class                                       |
+| TypeScript | `.ts` `.tsx` | `typescript`     | `tree-sitter-typescript` | function/method/class                                       |
+| Go         | `.go`        | `go`             | `tree-sitter-go`         | `type_spec` modelled as `kind=class` (known compromise)     |
+| Rust       | `.rs`        | `rust`           | `tree-sitter-rust`       | fn/struct/enum/trait; trait methods qualified by trait      |
+| Bash       | `.sh` `.bash`| `bash`           | `tree-sitter-bash`       | `function_definition` (both `name()` and `function name` forms) |
+
+When a grammar is missing, `dowse index` reports it, e.g. `skipped 12 .go files (go) - pip install "dowse[go]"`, so polyglot repos never fail silently.
 
 **Deliberately not auto-handled:** declarative/data formats (Bicep, YAML, `.psd1`) don't have a function/class shape, so the symbol model doesn't fit them. If you want your PSADT YAML profiles or Markdown package definitions searchable, that's better served by a small custom extractor (split on top-level keys / headings) than by forcing a code grammar — say the word and it's a ~20-line addition.
 

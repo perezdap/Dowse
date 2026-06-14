@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 import pytest
+import zvec
 
 import dowse.service as service
 from dowse.embed import Embedder
@@ -79,3 +80,22 @@ def sample_repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
     return tmp_path / "idx"
+
+
+# Shared DB-read helpers used by several test modules. Kept here so the zvec
+# enumeration boilerplate isn't copy-pasted per file.
+def _symbol_docs(db: str | Path) -> list[dict]:
+    """Return the field-dicts of every symbol in the index."""
+    c = zvec.open(str(db))
+    dim = c.schema.vectors[0].dimension
+    unit = [1.0 / (dim ** 0.5)] * dim
+    docs = c.query(
+        queries=zvec.Query(field_name="embedding", vector=unit),
+        topk=10_000,
+    )
+    return [dict(d.fields) for d in docs]
+
+
+def _symbol_names(db: str | Path) -> list[str]:
+    """Sorted symbol names in the index."""
+    return sorted(f["symbol_name"] for f in _symbol_docs(db))
