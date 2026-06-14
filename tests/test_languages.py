@@ -147,9 +147,6 @@ def test_scan_language_coverage_contract(tmp_path: Path, monkeypatch) -> None:
 
 def test_index_coverage_skipped_without_log(tmp_path: Path, db_path: Path, monkeypatch) -> None:
     """The MCP path (no log callback) must not compute coverage at all (#2)."""
-    import dowse.extract as extract
-    import dowse.service as service
-
     repo = tmp_path / "r"
     repo.mkdir()
     (repo / "app.go").write_text("package main\nfunc main() {}\n")
@@ -176,9 +173,6 @@ def test_index_coverage_skipped_without_log(tmp_path: Path, db_path: Path, monke
 
 def test_index_single_directory_walk(tmp_path: Path, db_path: Path, monkeypatch) -> None:
     """run_index walks the tree once even when computing coverage (#4)."""
-    import dowse.extract as extract
-    import dowse.service as service
-
     repo = tmp_path / "r"
     repo.mkdir()
     (repo / "m.py").write_text("def f(): pass\n")
