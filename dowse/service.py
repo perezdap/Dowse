@@ -67,11 +67,15 @@ def run_index(
     _log(f"[index] {len(files)} source files found")
 
     total_symbols = 0
+    current_relpaths: set[str] = set()
     t0 = time.time()
     for i, fp in enumerate(files, start=1):
         symbols = extract_file(fp, root, include_definitions=definitions)
         rel = fp.relative_to(root).as_posix()
+        current_relpaths.add(rel)
         if not symbols:
+            stats = store.sync_file(rel, [], [])
+            _log(f"[index] ({i}/{len(files)}) {rel}: +0 -{stats['deleted']}")
             continue
         vectors: list = []
         for start in range(0, len(symbols), batch):
@@ -79,6 +83,10 @@ def run_index(
         stats = store.sync_file(rel, symbols, vectors)
         total_symbols += len(symbols)
         _log(f"[index] ({i}/{len(files)}) {rel}: +{stats['upserted']} -{stats['deleted']}")
+
+    for orphan in sorted(store.list_indexed_files() - current_relpaths):
+        stats = store.sync_file(orphan, [], [])
+        _log(f"[index] (removed) {orphan}: -{stats['deleted']}")
 
     _log("[index] building vector index (optimize) ...")
     store.optimize()

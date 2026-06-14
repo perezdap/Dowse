@@ -95,6 +95,19 @@ class Store:
         )
         return {d.id for d in docs}
 
+    def list_indexed_files(self) -> set[str]:
+        """Return relative file paths that currently have at least one indexed symbol."""
+        unit = [1.0 / math.sqrt(self._dim)] * self._dim
+        docs = self._c.query(
+            queries=zvec.Query(field_name="embedding", vector=unit),
+            topk=_ENUM_TOPK,
+        )
+        return {
+            f.get("file_path")
+            for d in docs
+            if (f := dict(d.fields)).get("file_path")
+        }
+
     def sync_file(self, file_path: str, symbols, vectors) -> dict:
         """Idempotently reconcile one file's symbols: upsert current, drop stale."""
         current = {self._doc_id(s): (s, v) for s, v in zip(symbols, vectors)}
