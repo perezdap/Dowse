@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .embed import DEFAULT_MODEL, Embedder
-from .extract import extract_file, scan_language_coverage, supported_extensions, walk_directory
+from .extract import (
+    extract_file,
+    known_extensions,
+    scan_language_coverage,
+    supported_extensions,
+    walk_directory,
+)
 from .store import Store
 
 # Cache embedders by model name so repeated queries in a long-lived process
@@ -63,18 +69,24 @@ def run_index(
     store = Store.create(db, dimension=dim, reset=reset)
     _log(f"[index] model dim={dim}; db={db}")
 
-    files = list(walk_directory(root, exts=exts))
+    # Walk once over the union of indexable extensions and every known grammar
+    # extension (installed or not). The union lets coverage flag uninstalled
+    # grammars without a second directory walk; the index loop only processes
+    # the indexable subset below.
+    all_files = list(walk_directory(root, exts=exts | known_extensions()))
+    files = [f for f in all_files if f.suffix.lower() in exts]
     _log(f"[index] {len(files)} source files found")
 
     # Surface files we recognised but couldn't parse because the grammar wheel
-    # isn't installed. Read once here so a single walk feeds both the index and
-    # the per-language skip log.
-    coverage = scan_language_coverage(root)
-    for cov in coverage:
-        if not cov.installed and cov.install_hint:
-            ext_list = " ".join(cov.extensions)
-            _log(f"[index] skipped {cov.file_count} {ext_list} files "
-                 f"({cov.language}) - {cov.install_hint}")
+    # isn't installed. Skipped entirely when there's no log sink (the MCP
+    # `index_codebase` tool), so a server never pays for the coverage pass.
+    if log is not None:
+        coverage = scan_language_coverage(root, files=all_files)
+        for cov in coverage:
+            if not cov.installed and cov.install_hint:
+                ext_list = " ".join(cov.extensions)
+                _log(f"[index] skipped {cov.file_count} {ext_list} files "
+                     f"({cov.language}) - {cov.install_hint}")
 
     total_symbols = 0
     current_relpaths: set[str] = set()

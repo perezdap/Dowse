@@ -9,6 +9,7 @@ import zvec
 from typer.testing import CliRunner
 
 import dowse.cli as cli
+from conftest import _symbol_names
 from dowse.store import Store
 
 runner = CliRunner()
@@ -17,17 +18,6 @@ runner = CliRunner()
 def _doc_count(db: str | Path) -> int:
     store = Store.open(db)
     return store.count()
-
-
-def _symbol_names(db: str | Path) -> list[str]:
-    c = zvec.open(str(db))
-    dim = c.schema.vectors[0].dimension
-    unit = [1.0 / (dim ** 0.5)] * dim
-    docs = c.query(
-        queries=zvec.Query(field_name="embedding", vector=unit),
-        topk=10_000,
-    )
-    return sorted(dict(d.fields)["symbol_name"] for d in docs)
 
 
 def _symbols_for_file(db: str | Path, file_path: str) -> list[str]:

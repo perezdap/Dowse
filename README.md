@@ -179,7 +179,7 @@ PowerShell needs no `name` field handling out of the box — the grammar puts id
 | Rust       | `.rs`        | `rust`           | `tree-sitter-rust`       | fn/struct/enum/trait; trait methods qualified by trait      |
 | Bash       | `.sh` `.bash`| `bash`           | `tree-sitter-bash`       | `function_definition` (both `name()` and `function name` forms) |
 
-When a grammar is missing, `dowse index` reports it, e.g. `skipped 12 .go files (go) — pip install "dowse[go]"`, so polyglot repos never fail silently.
+When a grammar is missing, `dowse index` reports it, e.g. `skipped 12 .go files (go) - pip install "dowse[go]"`, so polyglot repos never fail silently.
 
 **Deliberately not auto-handled:** declarative/data formats (Bicep, YAML, `.psd1`) don't have a function/class shape, so the symbol model doesn't fit them. If you want your PSADT YAML profiles or Markdown package definitions searchable, that's better served by a small custom extractor (split on top-level keys / headings) than by forcing a code grammar — say the word and it's a ~20-line addition.
 

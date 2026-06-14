@@ -3,23 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import zvec
+import dowse.extract as extract
+import dowse.service as service
 
-
-def _symbol_names(db: str | Path) -> list[str]:
-    c = zvec.open(str(db))
-    dim = c.schema.vectors[0].dimension
-    unit = [1.0 / (dim ** 0.5)] * dim
-    docs = c.query(
-        queries=zvec.Query(field_name="embedding", vector=unit),
-        topk=10_000,
-    )
-    return sorted(dict(d.fields)["symbol_name"] for d in docs)
+from conftest import _symbol_docs, _symbol_names
 
 
 def test_index_rust(tmp_path: Path, db_path: Path) -> None:
-    import dowse.service as service
-
     repo = tmp_path / "rustrepo"
     repo.mkdir()
     (repo / "auth.rs").write_text(
@@ -31,24 +21,55 @@ def test_index_rust(tmp_path: Path, db_path: Path) -> None:
         "    sessions: HashMap<String, Session>,\n"
         "}\n"
         "\n"
+        "enum Mode { Read, Write }\n"
+        "\n"
         "trait Authenticator {\n"
         "    fn authenticate(&self, u: &str) -> bool;\n"
         "}\n"
     )
 
     summary = service.run_index(path=repo, db=db_path, reset=True)
-    assert summary["indexed_symbols"] >= 4
+    assert summary["indexed_symbols"] >= 5
+    syms = {s["symbol_name"]: s["kind"] for s in _symbol_docs(db_path)}
+
+    # Free functions and trait methods stay qualified by their enclosing def.
+    assert syms["login"] == "function"
+    assert syms["Authenticator.authenticate"] == "function"
+    # struct / enum / trait are classes, matching the Python convention.
+    assert syms["SessionManager"] == "class"
+    assert syms["Mode"] == "class"
+    assert syms["Authenticator"] == "class"
+
+
+def test_index_rust_impl_methods_qualified(tmp_path: Path, db_path: Path) -> None:
+    """Methods inside `impl Type { ... }` are qualified by their implementing
+    type (Class.method), just like Python methods and Rust trait methods."""
+    repo = tmp_path / "rustrepo"
+    repo.mkdir()
+    (repo / "lib.rs").write_text(
+        "struct Foo { x: u32 }\n"
+        "impl Foo {\n"
+        "    fn bar(&self) -> u32 { self.x }\n"
+        "    fn baz(&self) -> u32 { 0 }\n"
+        "}\n"
+        "impl Drop for Foo {\n"
+        "    fn drop(&mut self) {}\n"
+        "}\n"
+    )
+
+    service.run_index(path=repo, db=db_path, reset=True)
     names = _symbol_names(db_path)
-    assert "login" in names
-    assert "SessionManager" in names
-    assert "Authenticator" in names
-    # trait method is qualified by its trait (Class.method style)
-    assert "Authenticator.authenticate" in names
+
+    # Inherent impl -> Type.method.
+    assert "Foo.bar" in names
+    assert "Foo.baz" in names
+    assert "bar" not in names  # must be qualified, not bare
+    # Trait impl (`impl Trait for Type`) qualifies by the implementing TYPE.
+    assert "Foo.drop" in names
+    assert "Foo" in names  # the struct itself
 
 
 def test_index_bash(tmp_path: Path, db_path: Path) -> None:
-    import dowse.service as service
-
     repo = tmp_path / "bashrepo"
     repo.mkdir()
     (repo / "deploy.sh").write_text(
@@ -73,9 +94,6 @@ def test_index_bash(tmp_path: Path, db_path: Path) -> None:
 
 def test_index_logs_missing_grammar(tmp_path: Path, db_path: Path, monkeypatch) -> None:
     """Files on disk for an uninstalled grammar produce an actionable skip log."""
-    import dowse.extract as extract
-    import dowse.service as service
-
     # Pretend the Go grammar isn't installed, regardless of the real environment,
     # so the skip path is deterministic.
     patched = {k: v for k, v in extract._REGISTRY.items() if k != ".go"}
@@ -100,8 +118,6 @@ def test_index_logs_missing_grammar(tmp_path: Path, db_path: Path, monkeypatch) 
 
 def test_scan_language_coverage_contract(tmp_path: Path, monkeypatch) -> None:
     """Coverage splits on-disk files into installed vs missing-grammar groups."""
-    import dowse.extract as extract
-
     # Deterministic installed set: pretend only Python is available.
     py_spec = next(v for k, v in extract._REGISTRY.items() if k == ".py")
     monkeypatch.setattr(extract, "_REGISTRY", {
@@ -127,3 +143,54 @@ def test_scan_language_coverage_contract(tmp_path: Path, monkeypatch) -> None:
     assert cov["go"].file_count == 3
     assert cov["go"].extra == "go"
     assert cov["go"].install_hint == 'pip install "dowse[go]"'
+
+
+def test_index_coverage_skipped_without_log(tmp_path: Path, db_path: Path, monkeypatch) -> None:
+    """The MCP path (no log callback) must not compute coverage at all (#2)."""
+    import dowse.extract as extract
+    import dowse.service as service
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    (repo / "app.go").write_text("package main\nfunc main() {}\n")
+    (repo / "m.py").write_text("def f(): pass\n")
+
+    calls = {"coverage": 0}
+    real = extract.scan_language_coverage
+
+    def spy(root, files=None):
+        calls["coverage"] += 1
+        return real(root, files=files)
+
+    monkeypatch.setattr(service, "scan_language_coverage", spy)
+
+    # No log callback -> coverage never computed (MCP `index_codebase` path).
+    service.run_index(path=repo, db=db_path, reset=True)
+    assert calls["coverage"] == 0
+
+    # With a log callback -> coverage computed exactly once.
+    calls["coverage"] = 0
+    service.run_index(path=repo, db=db_path, reset=True, log=lambda _m: None)
+    assert calls["coverage"] == 1
+
+
+def test_index_single_directory_walk(tmp_path: Path, db_path: Path, monkeypatch) -> None:
+    """run_index walks the tree once even when computing coverage (#4)."""
+    import dowse.extract as extract
+    import dowse.service as service
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    (repo / "m.py").write_text("def f(): pass\n")
+    (repo / "app.go").write_text("package main\nfunc main() {}\n")
+
+    walks = {"n": 0}
+    real = extract.walk_directory
+
+    def spy(root, ignore=(), exts=None):
+        walks["n"] += 1
+        return real(root, ignore=ignore, exts=exts)
+
+    monkeypatch.setattr(service, "walk_directory", spy)
+    service.run_index(path=repo, db=db_path, reset=True, log=lambda _m: None)
+    assert walks["n"] == 1, f"expected a single walk, got {walks['n']}"
