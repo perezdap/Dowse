@@ -1,0 +1,28 @@
+# Core runtime deps — version floors match what this tool was built & tested against.
+# (Python 3.10–3.14; on Windows install Python 3.12 64-bit for prebuilt zvec wheels.)
+
+zvec>=0.5.0                  # embedded vector DB (Apache-2.0). Ships Windows x86-64 wheels.
+sentence-transformers>=2.7   # local embeddings; pulls torch (CPU build is fine)
+typer>=0.12                  # CLI
+
+# tree-sitter core + grammars. Each grammar wheel bundles a compiled parser,
+# so nothing is downloaded at runtime (important for offline / Windows use).
+# NOTE: do NOT use tree-sitter-language-pack — it fetches grammars from GitHub
+# at first use, which breaks in offline/locked-down environments.
+tree-sitter>=0.24,<0.26
+tree-sitter-python>=0.23
+
+# Verified to load offline and extract correctly on this stack:
+tree-sitter-powershell>=0.26    # function/filter/class + methods (.ps1, .psm1)
+tree-sitter-c-sharp>=0.23       # class/interface/struct/record + methods (.cs)
+
+# Optional: MCP server for `dowse serve` (use the official SDK, not standalone fastmcp).
+# pip install "dowse[mcp]"   or   pip install "mcp>=1.27"
+# mcp>=1.27
+
+# Optional extra grammars — uncomment the languages you actually index.
+# tree-sitter-javascript>=0.23
+# tree-sitter-typescript>=0.23
+# tree-sitter-go>=0.25
+# tree-sitter-rust>=0.24
+# tree-sitter-bash>=0.25
