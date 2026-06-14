@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 import dowse.cli as cli
@@ -115,6 +116,9 @@ def test_cli_status_smart_default_db(sample_repo: Path) -> None:
 
 def test_mcp_index_status_tool(sample_repo: Path) -> None:
     """The MCP server exposes index_status and it delegates to service."""
+    # mcp is an optional install (pip install dowse[mcp]) and CI runs only [dev],
+    # so skip cleanly where the SDK is absent rather than failing collection.
+    pytest.importorskip("mcp")
     import asyncio
     from dowse.server import build_server
 
