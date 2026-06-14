@@ -14,13 +14,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "tree-sitter-rust>=0.24", "tree-sitter-bash>=0.25"]
 mcp = ["mcp>=1.27"]
 javascript = ["tree-sitter-javascript>=0.23"]
 typescript = ["tree-sitter-typescript>=0.23"]
 go = ["tree-sitter-go>=0.25"]
 rust = ["tree-sitter-rust>=0.24"]
 bash = ["tree-sitter-bash>=0.25"]
+all-langs = [
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-go>=0.25",
+    "tree-sitter-rust>=0.24",
+    "tree-sitter-bash>=0.25",
+]
 
 [project.scripts]
 dowse = "dowse.cli:app"

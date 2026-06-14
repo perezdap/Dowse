@@ -43,9 +43,15 @@ class LangSpec:
     # it in a `function_name` / `simple_name` child). List those child node
     # types here; the resolver checks them after the standard "name" field.
     name_child_types: frozenset[str] = frozenset()
+    # pip extra that installs this grammar (None for core dependencies). Used
+    # to render actionable install hints when files exist on disk but the
+    # grammar wheel is missing.
+    extra: str | None = None
 
 
-# (extensions, grammar module, def node types, class node types, name child types)
+# (extensions, grammar module, def node types, class node types, name child
+# types, pip extra). The extra is None for languages bundled into the core
+# install (python/powershell/csharp) and a named extra for the rest.
 _RAW_SPECS = {
     "python": (
         [".py", ".pyi"],
@@ -53,6 +59,7 @@ _RAW_SPECS = {
         {"function_definition", "class_definition"},
         {"class_definition"},
         set(),
+        None,
     ),
     "powershell": (
         [".ps1", ".psm1"],
@@ -60,6 +67,7 @@ _RAW_SPECS = {
         {"function_statement", "class_statement", "class_method_definition"},
         {"class_statement"},
         {"function_name", "simple_name"},
+        None,
     ),
     "csharp": (
         [".cs"],
@@ -69,6 +77,7 @@ _RAW_SPECS = {
         {"class_declaration", "interface_declaration", "struct_declaration",
          "record_declaration"},
         set(),
+        None,
     ),
     "javascript": (
         [".js", ".jsx", ".mjs", ".cjs"],
@@ -76,6 +85,7 @@ _RAW_SPECS = {
         {"function_declaration", "method_definition", "class_declaration"},
         {"class_declaration"},
         set(),
+        "javascript",
     ),
     "typescript": (
         [".ts", ".tsx"],
@@ -83,6 +93,7 @@ _RAW_SPECS = {
         {"function_declaration", "method_definition", "class_declaration"},
         {"class_declaration"},
         set(),
+        "typescript",
     ),
     "go": (
         [".go"],
@@ -90,20 +101,92 @@ _RAW_SPECS = {
         {"function_declaration", "method_declaration", "type_spec"},
         {"type_spec"},
         set(),
+        "go",
+    ),
+    "rust": (
+        [".rs"],
+        "tree_sitter_rust",
+        {"function_item", "function_signature_item", "struct_item",
+         "enum_item", "trait_item"},
+        {"struct_item", "enum_item", "trait_item"},
+        set(),
+        "rust",
+    ),
+    "bash": (
+        [".sh", ".bash"],
+        "tree_sitter_bash",
+        {"function_definition"},
+        set(),
+        set(),
+        "bash",
     ),
 }
 
 # Build the active registry (extension -> LangSpec), skipping uninstalled grammars.
 _REGISTRY: dict[str, LangSpec] = {}
 _PARSERS: dict[str, Parser] = {}
-for _lang, (_exts, _mod, _defs, _classes, _name_children) in _RAW_SPECS.items():
+for _lang, (_exts, _mod, _defs, _classes, _name_children, _extra) in _RAW_SPECS.items():
     _loader = _load(_mod)
     if _loader is None:
         continue
     spec = LangSpec(_lang, _loader, frozenset(_defs), frozenset(_classes),
-                    frozenset(_name_children))
+                    frozenset(_name_children), extra=_extra)
     for _ext in _exts:
         _REGISTRY[_ext] = spec
+
+# Full extension -> language map for every supported language, installed or
+# not. Lets us surface "files exist on disk but no grammar wheel" without
+# needing to parse them. `_REGISTRY` above only covers installed grammars.
+_EXT_TO_LANG: dict[str, str] = {}
+_LANG_META: dict[str, tuple[tuple[str, ...], str | None]] = {}
+for _lang, (_exts, _mod, _defs, _classes, _name_children, _extra) in _RAW_SPECS.items():
+    _LANG_META[_lang] = (tuple(_exts), _extra)
+    for _ext in _exts:
+        _EXT_TO_LANG[_ext] = _lang
+
+
+@dataclass(frozen=True)
+class LangCoverage:
+    """Per-language file count discovered on disk, with grammar status."""
+    language: str
+    extensions: tuple[str, ...]
+    file_count: int
+    installed: bool
+    extra: str | None = None
+
+    @property
+    def install_hint(self) -> str | None:
+        """`pip install` hint, or None when already installed / a core dep."""
+        if self.installed or self.extra is None:
+            return None
+        return f'pip install "dowse[{self.extra}]"'
+
+
+def scan_language_coverage(root: Path) -> list[LangCoverage]:
+    """Count source files per language under ROOT; flag missing grammars.
+
+    Walks the known-extension superset (every language in the registry, even
+    if its grammar wheel is not installed) so callers can report files that
+    were skipped for lack of a parser. Read live from `_REGISTRY` so tests can
+    monkeypatch the installed set.
+    """
+    installed_names = {spec.name for spec in _REGISTRY.values()}
+    counts: dict[str, int] = {}
+    for p in walk_directory(root, exts=set(_EXT_TO_LANG)):
+        lang = _EXT_TO_LANG[p.suffix.lower()]
+        counts[lang] = counts.get(lang, 0) + 1
+    out: list[LangCoverage] = []
+    for lang, n in counts.items():
+        exts, extra = _LANG_META[lang]
+        out.append(LangCoverage(
+            language=lang,
+            extensions=exts,
+            file_count=n,
+            installed=lang in installed_names,
+            extra=extra,
+        ))
+    out.sort(key=lambda c: c.language)
+    return out
 
 
 def supported_extensions(include_definitions: bool = False) -> set[str]:
