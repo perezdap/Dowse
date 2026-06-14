@@ -95,4 +95,33 @@ def build_server(default_db: str = "./.dowse_index", default_model: str = DEFAUL
             definitions=definitions,
         )
 
+    @mcp.tool()
+    def index_status(
+        workspace: Optional[str] = None,
+        db: Optional[str] = None,
+    ) -> dict:
+        """Check index health before deciding whether to index or query.
+
+        Call this first when you are unsure whether an index exists, whether it
+        covers the languages in this repo, or whether it has gone stale after
+        edits. It never throws on a missing/stale index — it reports the state
+        so you can choose to run `index_codebase` (missing/stale) or
+        `query_context` (present and fresh).
+
+        Args:
+            workspace: The repo root. Used to resolve a default db path
+                (`<workspace>/.dowse_index`) and to compute the `stale` and
+                `missing_grammars` signals. Defaults to the server's working dir.
+            db: Index path; defaults to `<workspace>/.dowse_index`.
+
+        Returns:
+            A status object: exists, db_path, indexed_files, indexed_symbols,
+            dimension, languages, last_indexed_at, stale, missing_grammars.
+            `missing_grammars` lists each language seen on disk whose grammar
+            wheel is not installed, with an actionable `install_hint`.
+        """
+        from pathlib import Path
+        root = Path(workspace) if workspace else Path.cwd()
+        return service.run_index_status(db=db or str(root / ".dowse_index"), root=root)
+
     return mcp

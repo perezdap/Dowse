@@ -76,6 +76,23 @@ def query(
 
 
 @app.command()
+def status(
+    db: Optional[Path] = typer.Option(
+        None, "--db",
+        help="Index path. Defaults to <root>/.dowse_index (or ./.dowse_index).",
+    ),
+    root: Optional[Path] = typer.Option(
+        None, "--root",
+        help="Workspace root for stale + missing-grammar signals. Defaults to cwd.",
+    ),
+):
+    """Report index health: does it exist, how big, which languages, is it stale?"""
+    root_path = Path(root) if root else Path.cwd()
+    db_path = Path(db) if db else root_path / ".dowse_index"
+    _emit(service.run_index_status(db=db_path, root=root_path))
+
+
+@app.command()
 def serve(
     db: Path = typer.Option(Path("./.dowse_index"), "--db", help="Default Zvec collection path for tools."),
     model: str = typer.Option(DEFAULT_MODEL, "--model", help="Default embedding model for tools."),
