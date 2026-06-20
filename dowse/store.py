@@ -122,7 +122,7 @@ class Store:
 
     def sync_file(self, file_path: str, symbols, vectors) -> dict:
         """Idempotently reconcile one file's symbols: upsert current, drop stale."""
-        current = {self._doc_id(s): (s, v) for s, v in zip(symbols, vectors)}
+        current = {self._doc_id(s): (s, v) for s, v in zip(symbols, vectors, strict=True)}
         existing = self._existing_ids_for_file(file_path)
 
         docs = [
@@ -142,6 +142,7 @@ class Store:
 
     def count(self) -> int:
         try:
+            # zvec.stats shape varies across versions; -1 below means unknown, not 0
             return int(self._c.stats.doc_count)
         except Exception:
             return -1

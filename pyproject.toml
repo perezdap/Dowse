@@ -1,6 +1,6 @@
 [project]
 name = "dowse"
-version = "0.1.0"
+version = "0.1.1"
 description = "Fluff-free local code Context Engine: tree-sitter extraction + zvec hybrid retrieval."
 requires-python = ">=3.10"
 dependencies = [
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "tree-sitter-rust>=0.24", "tree-sitter-bash>=0.25"]
+dev = ["pytest>=8.0", "tree-sitter-rust>=0.24", "tree-sitter-bash>=0.25", "ruff>=0.6"]
 mcp = ["mcp>=1.27"]
 javascript = ["tree-sitter-javascript>=0.23"]
 typescript = ["tree-sitter-typescript>=0.23"]
@@ -38,3 +38,16 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["dowse"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+# Narrow startup rule-set: catch real bugs without re-litigating existing style.
+# - F   pyflakes: undefined names, unused imports, shadowed builtins.
+# - B   flake8-bugbear subset: B904 (raise from), B905 (zip strict=).
+# Widen the ruleset on purpose as the codebase migrates (e.g. UP045 Optional[X]
+# -> X | None is a sweep, not a fix).
+select = ["F", "B904", "B905"]
