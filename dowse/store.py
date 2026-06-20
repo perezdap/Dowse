@@ -108,6 +108,18 @@ class Store:
             if (f := dict(d.fields)).get("file_path")
         }
 
+    def list_indexed_languages(self) -> list[str]:
+        """Return distinct `language` values present in the index, sorted."""
+        unit = [1.0 / math.sqrt(self._dim)] * self._dim
+        docs = self._c.query(
+            queries=zvec.Query(field_name="embedding", vector=unit),
+            topk=_ENUM_TOPK,
+        )
+        langs = {dict(d.fields).get("language") for d in docs}
+        langs.discard(None)
+        langs.discard("")
+        return sorted(langs)
+
     def sync_file(self, file_path: str, symbols, vectors) -> dict:
         """Idempotently reconcile one file's symbols: upsert current, drop stale."""
         current = {self._doc_id(s): (s, v) for s, v in zip(symbols, vectors)}
@@ -133,6 +145,10 @@ class Store:
             return int(self._c.stats.doc_count)
         except Exception:
             return -1
+
+    @property
+    def dimension(self) -> int:
+        return self._dim
 
     # -- read --------------------------------------------------------------
     def hybrid_query(

@@ -14,7 +14,7 @@ dowse/
   embed.py        # sentence-transformers wrapper (lazy-loaded)
   store.py        # zvec schema, idempotent indexing, hybrid query
   service.py      # core index/query logic (one impl, shared)
-  cli.py          # Typer CLI: `index`, `query`, `serve`
+  cli.py          # Typer CLI: `index`, `query`, `status`, `serve`
   server.py       # MCP (FastMCP) stdio server wrapping the same logic
 requirements.txt
 pyproject.toml    # installs the `dowse` entrypoint; extras: [mcp], [go], ...
@@ -72,6 +72,28 @@ dowse index ./my_project --db ./.dowse_index --reset   # clean rebuild
 { "status": "ok", "indexed_files": 42, "indexed_symbols": 311, "dimension": 384, "db": "./.dowse_index", "elapsed_seconds": 8.4 }
 ```
 
+## Checking index health
+
+`dowse status` reports whether an index exists, how big it is, which languages it covers, and whether it has gone stale — so an agent (or you) can decide whether to index before querying instead of guessing. With `--root` set, `--db` defaults to `<root>/.dowse_index`, and two extra signals light up: `stale` (a source file newer than the index) and `missing_grammars` (files on disk whose grammar wheel isn't installed, each with an actionable `install_hint`).
+
+```bash
+dowse status --root ./my_project            # db defaults to ./my_project/.dowse_index
+dowse status --db ./.dowse_index             # exists only, no root to compare
+```
+
+```json
+{
+  "exists": true, "db_path": "./.dowse_index",
+  "indexed_files": 42, "indexed_symbols": 311, "dimension": 384,
+  "languages": ["python", "rust"],
+  "last_indexed_at": 1781460324.23, "stale": false,
+  "missing_grammars": [
+    { "language": "go", "extensions": [".go"], "file_count": 12,
+      "install_hint": "pip install \"dowse[go]\"" }
+  ]
+}
+```
+
 ## Querying (hybrid search)
 
 `dowse query` embeds your text, pulls a pool of dense candidates from zvec, then re-ranks them by combining semantic similarity with a cheap lexical overlap score (`final = 0.7·dense + 0.3·lexical`). The lexical pass is what makes pasting a raw error message work well — error text usually names the exact symbol, and the symbol-name match floats it to the top even if the embedding alone wouldn't. You can also push a native scalar filter down into zvec.
@@ -116,7 +138,7 @@ Tuning knobs: `--top/-n`, `--candidates` (dense pool size before re-rank), `--w-
 
 ## Using it from a coding harness (MCP)
 
-The CLI is already harness-usable as-is: any agent that can run a shell command can call `dowse query "..."` and read the JSON. But for harnesses that speak MCP (Claude Code, Claude Desktop, Cursor, Copilot CLI), `dowse serve` exposes the same logic as two native tools over stdio:
+The CLI is already harness-usable as-is: any agent that can run a shell command can call `dowse query "..."` and read the JSON. But for harnesses that speak MCP (Claude Code, Claude Desktop, Cursor, Copilot CLI), `dowse serve` exposes the same logic as three native tools over stdio:
 
 ```bash
 pip install "dowse[mcp]"   # adds the official mcp SDK
@@ -125,6 +147,7 @@ dowse serve --db ./.dowse_index          # speaks MCP on stdio
 
 - **`query_context`** — semantic code lookup. Returns the same ranked snippet list as `dowse query`. Its description tells the agent to use it for *meaning-based recall* (describe behaviour, paste an error) as a complement to `grep`/`glob`, which stay better when you know the literal string.
 - **`index_codebase`** — build/refresh the index (idempotent; `definitions` and `reset` flags exposed).
+- **`index_status`** — self-diagnosis. Call before indexing/querying to learn whether an index exists, which languages it covers, whether it's gone stale, and which grammars are missing (with install hints). Never throws on a missing index — it reports state so the agent can choose its next step.
 
 Register it with a harness by pointing at the command. For Claude Code / Claude Desktop (`claude_desktop_config.json` on Windows lives at `%APPDATA%\Claude\`):
 
