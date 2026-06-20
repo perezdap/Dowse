@@ -1,11 +1,22 @@
-.venv/
-venv/
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
 build/
-.dowse_index/
+dist/
+
+# Test / tooling
 .pytest_cache/
 .mypy_cache/
-*.egg
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local virtualenvs and index artefacts
+.venv/
+venv/
+.dowse_index/
+
+# IDE
+.idea/
+.vscode/
