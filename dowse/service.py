@@ -224,6 +224,8 @@ def run_index_status(
             "missing_grammars": _missing_grammars_for(root) if root else [],
         }
 
+    # Even though this is read-only, zvec's Python binding isn't thread-safe for
+    # concurrent in-process handles, so serialize to avoid binding-level errors.
     with _index_lock(db_path):
         store = Store.open_readonly(db_path)
         last_indexed = _db_mtime(db_path)
@@ -296,6 +298,8 @@ def run_query(
     """Hybrid-search the index; return {query, filter, results}."""
     sql_filter = build_filter(filter, kind, lang)
     qvec = get_embedder(model).embed_query(text)
+    # Even though this is read-only, zvec's Python binding isn't thread-safe for
+    # concurrent in-process handles, so serialize to avoid binding-level errors.
     with _index_lock(db):
         store = Store.open_readonly(db)
         results = store.hybrid_query(
