@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 import dowse.cli as cli
+import dowse.extract as extract
 import dowse.service as service
 
 runner = CliRunner()
@@ -45,8 +46,6 @@ def test_status_of_missing_index(tmp_path: Path, db_path: Path) -> None:
 
 def test_status_missing_grammars(sample_repo: Path, db_path: Path, monkeypatch) -> None:
     """Files on disk for an uninstalled grammar surface as actionable hints."""
-    import dowse.extract as extract
-
     # Pretend the Go grammar is absent regardless of the real environment.
     patched = {k: v for k, v in extract._REGISTRY.items() if k != ".go"}
     monkeypatch.setattr(extract, "_REGISTRY", patched)
@@ -77,6 +76,27 @@ def test_status_stale_after_edit(sample_repo: Path, db_path: Path) -> None:
     touched = sample_repo / "pkg" / "auth.py"
     future = time.time() + 3600
     os.utime(touched, (future, future))
+
+    stale = service.run_index_status(db=db_path, root=sample_repo)
+    assert stale["stale"] is True
+
+
+def test_status_stale_includes_missing_grammar_files(
+    sample_repo: Path, db_path: Path, monkeypatch
+) -> None:
+    """Edits to files whose grammar wheel is missing still mark the index stale."""
+    patched = {k: v for k, v in extract._REGISTRY.items() if k != ".go"}
+    monkeypatch.setattr(extract, "_REGISTRY", patched)
+
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    fresh = service.run_index_status(db=db_path, root=sample_repo)
+    assert fresh["stale"] is False
+
+    # Add a .go file after the index was written; Go grammar is not installed.
+    (sample_repo / "main.go").write_text("package main\nfunc main() {}\n")
+    future = time.time() + 3600
+    os.utime(sample_repo / "main.go", (future, future))
 
     stale = service.run_index_status(db=db_path, root=sample_repo)
     assert stale["stale"] is True
