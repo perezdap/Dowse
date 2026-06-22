@@ -10,6 +10,7 @@ Launch via `dowse serve`, or point a harness straight at:
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -120,7 +121,6 @@ def build_server(default_db: str = "./.dowse_index", default_model: str = DEFAUL
             `missing_grammars` lists each language seen on disk whose grammar
             wheel is not installed, with an actionable `install_hint`.
         """
-        from pathlib import Path
         root = Path(workspace) if workspace else Path.cwd()
         return service.run_index_status(db=db or str(root / ".dowse_index"), root=root)
 

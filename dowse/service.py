@@ -198,13 +198,15 @@ def _missing_grammars_for(root: str | Path) -> list[dict]:
 
 
 def _is_stale(root: str | Path, last_indexed: float | None) -> bool | None:
-    """True if any indexed-eligible source file is newer than the index.
+    """True if any source file is newer than the index.
 
-    Returns None when the comparison can't be made (no index mtime yet).
+    Walks every extension dowse recognises (installed or not) so that edits to
+    files with a missing grammar wheel still flip `stale` to `True`. Returns
+    None when the comparison can't be made (no index mtime yet).
     """
     if last_indexed is None:
         return None
-    exts = supported_extensions()
+    exts = known_extensions()
     root_path = Path(root)
     for p in walk_directory(root_path, exts=exts):
         try:
