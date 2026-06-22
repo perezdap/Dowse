@@ -5,6 +5,31 @@ All notable changes to **dowse** are documented here. Dates are in UTC.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `dowse index`, `dowse query`, `dowse status`, and `dowse serve` now report
+  locked zvec collections with a concise stderr message and exit code 1 instead
+  of leaking a traceback. The message points harness users toward one long-lived
+  `dowse serve` process rather than competing server/index processes.
+- `dowse query` and `dowse status` open zvec collections read-only, allowing
+  multiple independent agents/processes to query or inspect the same
+  `.dowse_index` concurrently. They still fail cleanly while an index/write is
+  in progress, because zvec does not allow readers and writers at the same time.
+- Service-level index operations are serialized per resolved index path inside a
+  process. Concurrent MCP tool calls against the same `.dowse_index` now wait
+  for each other instead of fighting over zvec's single-writer collection lock.
+- `dowse serve` holds a dedicated OS-level server lock (`<db>.serve.lock`) for
+  its lifetime, guaranteeing only one MCP server can run for a given index path.
+  It still performs an active-writer zvec lock preflight before importing the
+  optional MCP dependency, so it refuses to start immediately if indexing is
+  already using the configured collection.
+
+### Documented
+- Multi-agent worktree guidance: use a per-worktree relative `--db ./.dowse_index`
+  for fully isolated indexes and locks; use a shared absolute `--db` only when
+  agents intentionally share one checkout/index.
+
 ## [0.1.1] - 2026-06-20
 
 ### Added

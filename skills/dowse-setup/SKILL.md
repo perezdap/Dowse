@@ -101,6 +101,23 @@ Register with Claude Desktop / Claude Code
 Use a **stable absolute `--db` path** so the server always opens the same
 collection regardless of launch cwd.
 
+### 4a. Multiple agents / git worktrees
+
+Lock identity is the **resolved `--db` path**, not the repo. Two strategies:
+
+- **Per-worktree index (recommended for parallel agents).** Each worktree uses
+  a relative `--db .\.dowse_index`, which resolves to a different absolute path
+  per worktree. Separate collection, separate `<db>.serve.lock` → **zero
+  contention**: every agent can index, query, and serve at once. Cost: each
+  worktree builds its own index (the ~80 MB model is shared via the HF cache;
+  only per-symbol embedding repeats). Upside: the index always matches that
+  worktree's actual code. `.dowse_index/` and `*.serve.lock` are git-ignored,
+  so they won't pollute status — but clean up worktrees to reclaim disk.
+- **Shared index (one checkout, many agents).** All agents point at the same
+  absolute `--db`. This is the only case where the read/write rules and the
+  server lock matter: many concurrent readers (`query`/`status`), one writer
+  (`index`), and a single `dowse serve`. Prefer one long-lived shared server.
+
 ### 5. Hooks (optional, SessionStart only)
 
 A SessionStart hook keeps the index fresh per session:
@@ -123,7 +140,12 @@ A SessionStart hook keeps the index fresh per session:
 the whole tree every call (only the zvec upsert is incremental). For
 in-session freshness, instruct the agent to call the `index_codebase` MCP
 tool after substantial edits — that keeps all DB access in the server
-process and avoids cross-process lock contention on the zvec collection.
+process. `dowse query` and `dowse status` use read-only zvec opens, so
+separate agents can query one `.dowse_index` concurrently. Writers still
+exclude readers: `index` / `index_codebase` can contend with queries or another
+server, but dowse reports that as a concise stderr error. `dowse serve` also
+holds a dedicated `<db>.serve.lock` for its lifetime (preventing a second server
+for the same index) and performs an active-writer preflight before startup.
 
 ## Gotchas
 

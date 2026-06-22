@@ -19,6 +19,8 @@ import typer
 
 from .embed import DEFAULT_MODEL
 from . import service
+from .server_lock import ServerLockHeld, acquire_server_lock
+from .store import LockedIndexError, Store
 
 app = typer.Typer(add_completion=False, help="Local code Context Engine (tree-sitter + zvec).")
 
@@ -34,6 +36,36 @@ def _emit(payload) -> None:
     sys.stdout.flush()
 
 
+def _locked_index_exit(exc: LockedIndexError) -> None:
+    _err(
+        f"[dowse] index is already open: {exc.path}\n"
+        "[dowse] Another dowse/zvec process is using this collection. "
+        "Wait for any indexing job to finish, stop the competing process, or use "
+        "one long-lived `dowse serve` MCP server instead of competing servers."
+    )
+    raise typer.Exit(code=1) from None
+
+
+def _server_lock_exit(exc: ServerLockHeld, db: Path) -> None:
+    holder = f" (pid {exc.holder_pid})" if exc.holder_pid else ""
+    _err(
+        f"[serve] another dowse serve is already running for {db}{holder}\n"
+        f"[serve] lock file: {exc.lock_path}"
+    )
+    raise typer.Exit(code=1) from None
+
+
+def _probe_serve_index(db: Path) -> None:
+    """Fail fast if an existing index is currently held by an active writer."""
+    if not db.exists() or not any(db.iterdir()):
+        return
+    try:
+        store = Store.open_readonly(db)
+        del store
+    except LockedIndexError as exc:
+        _locked_index_exit(exc)
+
+
 @app.command()
 def index(
     path: Path = typer.Argument(..., exists=True, file_okay=False, help="Directory to index."),
@@ -47,10 +79,13 @@ def index(
     ),
 ):
     """Recursively index function/class definitions under PATH."""
-    summary = service.run_index(
-        path=path, db=db, model=model, reset=reset,
-        batch=batch, definitions=definitions, log=_err,
-    )
+    try:
+        summary = service.run_index(
+            path=path, db=db, model=model, reset=reset,
+            batch=batch, definitions=definitions, log=_err,
+        )
+    except LockedIndexError as exc:
+        _locked_index_exit(exc)
     _emit(summary)
 
 
@@ -68,10 +103,13 @@ def query(
     w_lexical: float = typer.Option(0.3, "--w-lexical", help="Weight for lexical overlap."),
 ):
     """Return the top-N most relevant code snippets as JSON."""
-    payload = service.run_query(
-        text=text, db=db, model=model, top=top, candidates=candidates,
-        filter=filter, kind=kind, lang=lang, w_dense=w_dense, w_lexical=w_lexical,
-    )
+    try:
+        payload = service.run_query(
+            text=text, db=db, model=model, top=top, candidates=candidates,
+            filter=filter, kind=kind, lang=lang, w_dense=w_dense, w_lexical=w_lexical,
+        )
+    except LockedIndexError as exc:
+        _locked_index_exit(exc)
     _emit(payload)
 
 
@@ -89,7 +127,11 @@ def status(
     """Report index health: does it exist, how big, which languages, is it stale?"""
     root_path = Path(root) if root else Path.cwd()
     db_path = Path(db) if db else root_path / ".dowse_index"
-    _emit(service.run_index_status(db=db_path, root=root_path))
+    try:
+        payload = service.run_index_status(db=db_path, root=root_path)
+    except LockedIndexError as exc:
+        _locked_index_exit(exc)
+    _emit(payload)
 
 
 @app.command()
@@ -99,13 +141,22 @@ def serve(
 ):
     """Run an MCP server (stdio) exposing `index` and `query` to a coding harness."""
     try:
-        from .server import build_server
-    except ModuleNotFoundError as exc:  # mcp not installed
-        _err(f"[serve] missing dependency: {exc}. Install with: pip install 'dowse[mcp]'")
-        raise typer.Exit(code=1) from None
-    _err(f"[serve] starting MCP stdio server (default db={db}, model={model})")
-    mcp = build_server(default_db=str(db), default_model=model)
-    mcp.run(transport="stdio")
+        server_lock = acquire_server_lock(db)
+    except ServerLockHeld as exc:
+        _server_lock_exit(exc, db)
+
+    try:
+        _probe_serve_index(db)
+        try:
+            from .server import build_server
+        except ModuleNotFoundError as exc:  # mcp not installed
+            _err(f"[serve] missing dependency: {exc}. Install with: pip install 'dowse[mcp]'")
+            raise typer.Exit(code=1) from None
+        _err(f"[serve] starting MCP stdio server (default db={db}, model={model})")
+        mcp = build_server(default_db=str(db), default_model=model)
+        mcp.run(transport="stdio")
+    finally:
+        server_lock.release()
 
 
 if __name__ == "__main__":

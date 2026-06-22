@@ -149,6 +149,10 @@ dowse serve --db ./.dowse_index          # speaks MCP on stdio
 - **`index_codebase`** — build/refresh the index (idempotent; `definitions` and `reset` flags exposed).
 - **`index_status`** — self-diagnosis. Call before indexing/querying to learn whether an index exists, which languages it covers, whether it's gone stale, and which grammars are missing (with install hints). Never throws on a missing index — it reports state so the agent can choose its next step.
 
+Prefer one long-lived MCP server per repo over competing server/index processes. `dowse query` and `dowse status` open the collection read-only, so multiple independent agents can query the same `.dowse_index` concurrently. Indexing still needs write access, and zvec does not allow readers and writers at the same time; those conflicts are reported as a concise stderr error instead of a traceback. `dowse serve` serializes in-process tool calls for the same index, holds a dedicated `<db>.serve.lock` for its lifetime so a second server for the same index refuses to start, and performs an active-writer preflight before startup.
+
+For parallel agents in separate git worktrees, prefer a per-worktree relative `--db ./.dowse_index`: each worktree gets its own collection and `.serve.lock`, so agents can index/query/serve independently and the index matches that worktree's code. Use a shared absolute `--db` only when agents intentionally share one checkout/index.
+
 Register it with a harness by pointing at the command. For Claude Code / Claude Desktop (`claude_desktop_config.json` on Windows lives at `%APPDATA%\Claude\`):
 
 ```json
