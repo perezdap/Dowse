@@ -109,11 +109,18 @@ class Store:
         }
 
     def list_indexed_languages(self) -> list[str]:
-        """Return distinct `language` values present in the index, sorted."""
+        """Return distinct `language` values present in the index, sorted.
+
+        Uses a vector probe that asks for every indexed document so the set is
+        complete for typical codebases. Very large indexes rely on zvec's ANN
+        recall, so the result is best-effort rather than transactionally exact.
+        """
         unit = [1.0 / math.sqrt(self._dim)] * self._dim
+        total = self.count()
+        topk = max(total, 1) if total >= 0 else _ENUM_TOPK
         docs = self._c.query(
             queries=zvec.Query(field_name="embedding", vector=unit),
-            topk=_ENUM_TOPK,
+            topk=topk,
         )
         langs = {dict(d.fields).get("language") for d in docs}
         langs.discard(None)
