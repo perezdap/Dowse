@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -73,7 +74,6 @@ def test_status_stale_after_edit(sample_repo: Path, db_path: Path) -> None:
     assert fresh["stale"] is False
 
     # Touch a source file well after the index was written.
-    import os, time
     touched = sample_repo / "pkg" / "auth.py"
     future = time.time() + 3600
     os.utime(touched, (future, future))

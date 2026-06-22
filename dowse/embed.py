@@ -22,7 +22,12 @@ class Embedder:
 
     @property
     def dimension(self) -> int:
-        return int(self._model.get_sentence_embedding_dimension())
+        # `get_embedding_dimension()` is the new name; the old
+        # `get_sentence_embedding_dimension()` triggers a FutureWarning on cold install.
+        get_dim = getattr(self._model, "get_embedding_dimension", None)
+        if get_dim is None:
+            get_dim = self._model.get_sentence_embedding_dimension
+        return int(get_dim())
 
     @staticmethod
     def _symbol_text(symbol) -> str:
