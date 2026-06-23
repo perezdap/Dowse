@@ -92,6 +92,30 @@ def test_index_bash(tmp_path: Path, db_path: Path) -> None:
     assert "deploy" in names
 
 
+def test_index_typescript(tmp_path: Path, db_path: Path) -> None:
+    repo = tmp_path / "tsrepo"
+    repo.mkdir()
+    (repo / "auth.ts").write_text(
+        "export function login(user: string): Token {\n"
+        "  return makeToken(user);\n"
+        "}\n"
+        "\n"
+        "export class SessionManager {\n"
+        "  revoke(id: string): void {\n"
+        "    deleteSession(id);\n"
+        "  }\n"
+        "}\n"
+    )
+
+    summary = service.run_index(path=repo, db=db_path, reset=True)
+    assert summary["indexed_symbols"] >= 2
+    syms = {s["symbol_name"]: s["kind"] for s in _symbol_docs(db_path)}
+
+    assert syms["login"] == "function"
+    assert syms["SessionManager"] == "class"
+    assert syms["SessionManager.revoke"] == "function"
+
+
 def test_index_logs_missing_grammar(tmp_path: Path, db_path: Path, monkeypatch) -> None:
     """Files on disk for an uninstalled grammar produce an actionable skip log."""
     # Pretend the Go grammar isn't installed, regardless of the real environment,
