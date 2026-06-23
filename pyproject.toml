@@ -2,6 +2,25 @@
 name = "dowse"
 version = "0.1.1"
 description = "Fluff-free local code Context Engine: tree-sitter extraction + zvec hybrid retrieval."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "David Perez" }]
+maintainers = [{ name = "David Perez" }]
+keywords = ["code-search", "semantic-search", "mcp", "tree-sitter", "vector-database"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 requires-python = ">=3.10"
 dependencies = [
     "zvec>=0.5.0",
@@ -12,6 +31,11 @@ dependencies = [
     "tree-sitter-powershell>=0.26",
     "tree-sitter-c-sharp>=0.23",
 ]
+
+[project.urls]
+Homepage = "https://github.com/perezdap/dowse"
+Repository = "https://github.com/perezdap/dowse"
+Issues = "https://github.com/perezdap/dowse/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "tree-sitter-rust>=0.24", "tree-sitter-bash>=0.25", "tree-sitter-typescript>=0.23", "ruff>=0.6"]
