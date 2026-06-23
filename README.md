@@ -109,6 +109,15 @@ dowse status --db ./.dowse_index             # exists only, no root to compare
 }
 ```
 
+`dowse doctor` bundles install facts (Python version, dowse module path, MCP SDK),
+index health (same fields as `status`), serve/index lock probes, and whether
+`.mcp.json` / `.cursor/mcp.json` reference a dowse MCP server — one JSON blob for
+agents debugging setup.
+
+```bash
+dowse doctor --root ./my_project
+```
+
 ## Querying (hybrid search)
 
 `dowse query` embeds your text, pulls a pool of dense candidates from zvec, then re-ranks them by combining semantic similarity with a cheap lexical overlap score (`final = 0.7·dense + 0.3·lexical`). The lexical pass is what makes pasting a raw error message work well — error text usually names the exact symbol, and the symbol-name match floats it to the top even if the embedding alone wouldn't. You can also push a native scalar filter down into zvec.

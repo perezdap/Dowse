@@ -3,6 +3,8 @@
 Commands:
   index   walk a directory, extract function/class symbols, embed, store in zvec
   query   embed a natural-language string / error, hybrid-search, emit JSON
+  status  report index health (exists, stale, missing grammars)
+  doctor  install + index + lock + harness diagnostics as JSON
   serve   expose index/query as MCP tools over stdio for a coding harness
 
 Design rule: stdout carries ONLY machine-readable JSON. All human/progress
@@ -129,6 +131,27 @@ def status(
     db_path = Path(db) if db else root_path / ".dowse_index"
     try:
         payload = service.run_index_status(db=db_path, root=root_path)
+    except LockedIndexError as exc:
+        _locked_index_exit(exc)
+    _emit(payload)
+
+
+@app.command()
+def doctor(
+    db: Optional[Path] = typer.Option(
+        None, "--db",
+        help="Index path. Defaults to <root>/.dowse_index (or ./.dowse_index).",
+    ),
+    root: Optional[Path] = typer.Option(
+        None, "--root",
+        help="Workspace root for index, grammar, and MCP config checks. Defaults to cwd.",
+    ),
+):
+    """Report install, index, lock, and harness configuration health as JSON."""
+    root_path = Path(root) if root else Path.cwd()
+    db_path = Path(db) if db else root_path / ".dowse_index"
+    try:
+        payload = service.run_doctor(db=db_path, root=root_path)
     except LockedIndexError as exc:
         _locked_index_exit(exc)
     _emit(payload)
