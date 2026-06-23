@@ -7,9 +7,11 @@ how to present it.
 """
 from __future__ import annotations
 
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 from .embed import DEFAULT_MODEL, Embedder
 from .extract import (
@@ -30,6 +32,34 @@ def get_embedder(model: str = DEFAULT_MODEL) -> Embedder:
     if model not in _EMBEDDERS:
         _EMBEDDERS[model] = Embedder(model)
     return _EMBEDDERS[model]
+
+
+# zvec allows only one read-write handle per collection, even in-process. When a
+# single process (notably the long-lived MCP server) fields concurrent tool
+# calls against the same index, serialize them per resolved db path so the
+# second caller waits instead of hitting a lock error.
+_INDEX_LOCKS: dict[str, threading.Lock] = {}
+_INDEX_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(db: str | Path) -> threading.Lock:
+    key = str(Path(db).resolve())
+    with _INDEX_LOCKS_GUARD:
+        lock = _INDEX_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _INDEX_LOCKS[key] = lock
+        return lock
+
+
+@contextmanager
+def _index_lock(db: str | Path) -> Iterator[None]:
+    lock = _lock_for(db)
+    lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def build_filter(raw: Optional[str], kind: Optional[str], lang: Optional[str]) -> Optional[str]:
@@ -66,6 +96,34 @@ def run_index(
     embedder = get_embedder(model)
     _log(f"[index] loading model '{model}' ...")
     dim = embedder.dimension
+    with _index_lock(db):
+        return _run_index_locked(
+            root=root,
+            db=db,
+            embedder=embedder,
+            dim=dim,
+            reset=reset,
+            batch=batch,
+            definitions=definitions,
+            exts=exts,
+            log_enabled=log is not None,
+            _log=_log,
+        )
+
+
+def _run_index_locked(
+    *,
+    root: Path,
+    db: str | Path,
+    embedder: Embedder,
+    dim: int,
+    reset: bool,
+    batch: int,
+    definitions: bool,
+    exts: set[str],
+    log_enabled: bool,
+    _log: Callable[[str], None],
+) -> dict:
     store = Store.create(db, dimension=dim, reset=reset)
     _log(f"[index] model dim={dim}; db={db}")
 
@@ -80,7 +138,7 @@ def run_index(
     # Surface files we recognised but couldn't parse because the grammar wheel
     # isn't installed. Skipped entirely when there's no log sink (the MCP
     # `index_codebase` tool), so a server never pays for the coverage pass.
-    if log is not None:
+    if log_enabled:
         coverage = scan_language_coverage(root, files=all_files)
         for cov in coverage:
             if not cov.installed and cov.install_hint:
@@ -166,17 +224,25 @@ def run_index_status(
             "missing_grammars": _missing_grammars_for(root) if root else [],
         }
 
-    store = Store.open(db_path)
-    last_indexed = _db_mtime(db_path)
-    stale = _is_stale(root, last_indexed) if root is not None else None
+    # Even though this is read-only, zvec's Python binding isn't thread-safe for
+    # concurrent in-process handles, so serialize to avoid binding-level errors.
+    with _index_lock(db_path):
+        store = Store.open_readonly(db_path)
+        last_indexed = _db_mtime(db_path)
+        stale = _is_stale(root, last_indexed) if root is not None else None
+        indexed_files = len(store.list_indexed_files())
+        indexed_symbols = store.count()
+        dimension = store.dimension
+        languages = store.list_indexed_languages()
+        del store
 
     return {
         "exists": True,
         "db_path": str(db_path),
-        "indexed_files": len(store.list_indexed_files()),
-        "indexed_symbols": store.count(),
-        "dimension": store.dimension,
-        "languages": store.list_indexed_languages(),
+        "indexed_files": indexed_files,
+        "indexed_symbols": indexed_symbols,
+        "dimension": dimension,
+        "languages": languages,
         "last_indexed_at": last_indexed,
         "stale": stale,
         "missing_grammars": _missing_grammars_for(root) if root else [],
@@ -230,16 +296,20 @@ def run_query(
     w_lexical: float = 0.3,
 ) -> dict:
     """Hybrid-search the index; return {query, filter, results}."""
-    store = Store.open(db)
     sql_filter = build_filter(filter, kind, lang)
     qvec = get_embedder(model).embed_query(text)
-    results = store.hybrid_query(
-        query_vector=qvec,
-        query_text=text,
-        top=top,
-        candidate_k=candidates,
-        sql_filter=sql_filter,
-        w_dense=w_dense,
-        w_lexical=w_lexical,
-    )
+    # Even though this is read-only, zvec's Python binding isn't thread-safe for
+    # concurrent in-process handles, so serialize to avoid binding-level errors.
+    with _index_lock(db):
+        store = Store.open_readonly(db)
+        results = store.hybrid_query(
+            query_vector=qvec,
+            query_text=text,
+            top=top,
+            candidate_k=candidates,
+            sql_filter=sql_filter,
+            w_dense=w_dense,
+            w_lexical=w_lexical,
+        )
+        del store
     return {"query": text, "filter": sql_filter, "results": results}

@@ -87,14 +87,36 @@ zvec SQL uses `=` for equality, not `==`. Also escape single quotes inside
 string literals by doubling them: `'it''s'`. The `--kind` and `--lang`
 shortcuts handle escaping for you — prefer them when possible.
 
+### Multi-agent worktrees
+
+If agents work in separate git worktrees, prefer a **per-worktree index**:
+
+```powershell
+# Run from inside each worktree
+dowse index . --db .\.dowse_index
+dowse serve --db .\.dowse_index
+```
+
+Because `.\.dowse_index` resolves inside each worktree, each agent gets a
+separate zvec collection and separate `.serve.lock`; there is no cross-agent
+contention. Use a shared absolute `--db` only when agents intentionally share one
+checkout/index.
+
 ### zvec lock / "collection is in use" errors
 
-zvec holds the collection directory while open. Two processes writing to the
-same `--db` path at once can contend. Common causes:
+zvec allows many concurrent **readers** but only one **writer**, and a writer
+excludes readers. `dowse query` and `dowse status` open read-only, so multiple
+agents can query the same `--db` at once. Contention only arises when a writer
+is involved (an `index`/`index_codebase`, or another `dowse serve` startup),
+and dowse reports it as `index is already open` with exit code 1 rather than a
+traceback. Common causes:
 
-- A SessionStart hook runs `dowse index ... --db X` while `dowse serve --db X`
-  is already running. Fix: run the hook against a different `--db`, or ensure
-  the hook finishes before the server starts.
+- A SessionStart hook runs `dowse index ... --db X` while a query/server is
+  using `--db X`. Fix: run the hook against a different `--db`, or ensure the
+  hook finishes before readers/servers start.
+- Two `dowse serve` processes are configured against the same `--db`. The second
+  one refuses to start because the first holds `<db>.serve.lock` for its
+  lifetime. Fix: run a single shared server per repo.
 - A previous `dowse` process crashed and left a stale lock. Fix: stop all
   `dowse` processes; if needed, delete the `--db` directory and rebuild with
   `--reset`.

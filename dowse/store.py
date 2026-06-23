@@ -29,6 +29,21 @@ _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{1,}")
 _ENUM_TOPK = 100_000  # cap when enumerating a single file's existing symbols
 
 
+class LockedIndexError(RuntimeError):
+    """Raised when zvec refuses to open a collection because another handle owns it."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__(f"dowse index is already open: {path}")
+        self.path = path
+
+
+def _is_lock_error(exc: BaseException) -> bool:
+    # zvec phrases the lock refusal per mode: "Can't lock read-write collection"
+    # when a writer is blocked, "Can't lock read-only collection" when a reader
+    # is blocked by an active writer. Both mean "another handle owns it".
+    return "Can't lock" in str(exc) and "collection" in str(exc)
+
+
 def _sql_str(value: str) -> str:
     """Quote/escape a string literal for a zvec SQL filter."""
     return "'" + value.replace("'", "''") + "'"
@@ -70,14 +85,47 @@ class Store:
     def create(cls, path: str | Path, dimension: int, reset: bool = False) -> "Store":
         path = Path(path)
         if reset and path.exists():
-            shutil.rmtree(path)
-        if path.exists():
-            return cls(zvec.open(str(path)))
-        return cls(zvec.create_and_open(path=str(path), schema=_build_schema(dimension)))
+            try:
+                shutil.rmtree(path)
+            except PermissionError:
+                # On Windows a live zvec handle keeps the collection's own LOCK
+                # files open, so rmtree fails. That specifically means another
+                # process is using the collection -> report it as locked.
+                raise LockedIndexError(str(path)) from None
+        try:
+            if path.exists():
+                return cls(zvec.open(str(path)))
+            return cls(zvec.create_and_open(path=str(path), schema=_build_schema(dimension)))
+        except RuntimeError as exc:
+            if _is_lock_error(exc):
+                raise LockedIndexError(str(path)) from None
+            raise
 
     @classmethod
     def open(cls, path: str | Path) -> "Store":
-        return cls(zvec.open(str(Path(path))))
+        try:
+            return cls(zvec.open(str(Path(path))))
+        except RuntimeError as exc:
+            if _is_lock_error(exc):
+                raise LockedIndexError(str(Path(path))) from None
+            raise
+
+    @classmethod
+    def open_readonly(cls, path: str | Path) -> "Store":
+        """Open the collection read-only so multiple readers can coexist.
+
+        zvec permits any number of concurrent read-only handles, so several
+        agents can query the same index at once. A read-only open still fails if
+        a writer (an in-progress `index`) holds the collection — surfaced as the
+        same LockedIndexError so callers report it uniformly.
+        """
+        try:
+            option = zvec.CollectionOption(read_only=True)
+            return cls(zvec.open(str(Path(path)), option))
+        except RuntimeError as exc:
+            if _is_lock_error(exc):
+                raise LockedIndexError(str(Path(path))) from None
+            raise
 
     # -- write -------------------------------------------------------------
     @staticmethod
