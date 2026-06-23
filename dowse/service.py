@@ -382,6 +382,128 @@ def run_doctor(
     }
 
 
+# ---------------------------------------------------------------------------
+# dowse init — one-command project bootstrap (#5, #16)
+# ---------------------------------------------------------------------------
+
+_DOWSE_MCP_KEY = "dowse"
+
+
+def _relative_db_path(root: Path, db: Path) -> str:
+    """DB path relative to root for MCP config args; falls back to absolute."""
+    try:
+        return db.relative_to(root).as_posix()
+    except ValueError:
+        return str(db)
+
+
+def _merge_mcp_config(root: Path, db_rel: str) -> dict:
+    """Create or merge .mcp.json with a dowse server entry.
+
+    Returns ``{"created": bool, "merged": bool}`` describing what happened.
+    """
+    mcp_path = root / ".mcp.json"
+    dowse_entry = {
+        "command": "dowse",
+        "args": ["serve", "--db", db_rel],
+    }
+
+    if not mcp_path.exists():
+        data = {"mcpServers": {_DOWSE_MCP_KEY: dowse_entry}}
+        mcp_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return {"created": True, "merged": False}
+
+    try:
+        data = json.loads(mcp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+
+    if not isinstance(data, dict):
+        data = {}
+
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = {}
+        data["mcpServers"] = servers
+
+    servers[_DOWSE_MCP_KEY] = dowse_entry
+    mcp_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return {"created": False, "merged": True}
+
+
+def _merge_gitignore(root: Path) -> bool:
+    """Append ``.dowse_index/`` to .gitignore if not already present.
+
+    Returns True if a line was added, False if it was already there.
+    """
+    gi_path = root / ".gitignore"
+    marker = ".dowse_index/"
+
+    if not gi_path.exists():
+        gi_path.write_text(marker + "\n", encoding="utf-8")
+        return True
+
+    content = gi_path.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    if any(line.strip() == marker for line in lines):
+        return False
+
+    # Ensure trailing newline before appending.
+    prefix = content if content.endswith("\n") else content + "\n"
+    gi_path.write_text(prefix + marker + "\n", encoding="utf-8")
+    return True
+
+
+def run_init(
+    root: str | Path,
+    db: str | Path | None = None,
+    model: str = DEFAULT_MODEL,
+    skip_index: bool = False,
+    log: Callable[[str], None] | None = None,
+) -> dict:
+    """One-command project bootstrap: MCP config, gitignore, coverage, index.
+
+    - Writes or merges ``.mcp.json`` with a ``dowse`` server entry (#16)
+    - Adds ``.dowse_index/`` to ``.gitignore`` idempotently (#16)
+    - Reports missing grammar coverage (#5)
+    - Runs an initial index unless ``skip_index`` is True (#5)
+    """
+    def _log(msg: str) -> None:
+        if log:
+            log(msg)
+
+    root_path = Path(root).resolve()
+    db_path = Path(db).resolve() if db else root_path / ".dowse_index"
+    db_rel = _relative_db_path(root_path, db_path)
+
+    _log("[init] configuring .mcp.json ...")
+    mcp_result = _merge_mcp_config(root_path, db_rel)
+
+    _log("[init] updating .gitignore ...")
+    _merge_gitignore(root_path)
+
+    missing = _missing_grammars_for(root_path)
+    if missing:
+        for m in missing:
+            _log(f"[init] missing grammar: {m['language']} ({m['install_hint']})")
+
+    index_summary = None
+    if not skip_index:
+        _log("[init] running initial index ...")
+        index_summary = run_index(
+            path=root_path, db=db_path, model=model, reset=False, log=_log,
+        )
+
+    return {
+        "status": "ok",
+        "workspace": {"root": str(root_path), "db_path": str(db_path)},
+        "mcp_config": mcp_result,
+        "gitignore": {"path": str(root_path / ".gitignore")},
+        "missing_grammars": missing,
+        "index": index_summary,
+    }
+
+
 def run_query(
     text: str,
     db: str | Path = "./.dowse_index",

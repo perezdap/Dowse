@@ -43,10 +43,17 @@ runtime and breaks offline use. Per-language wheels are self-contained.
 ### 2. Index
 
 ```powershell
+dowse init .\repo --db .\.dowse_index         # one-command bootstrap: MCP config + gitignore + index
 dowse index .\repo --db .\.dowse_index           # incremental, idempotent
 dowse index .\repo --db .\.dowse_index --reset    # clean rebuild
 dowse index .\packages --db .\.dowse_index --definitions   # YAML/Markdown sections
 ```
+
+`dowse init` is the fastest path from fresh clone to working MCP: it writes or
+merges `.mcp.json` with a `dowse` server entry, adds `.dowse_index/` to
+`.gitignore`, reports missing grammar extras, and runs the first index — all in
+one step. Use `--skip-index` for config-only runs. Re-running `init` is
+idempotent (no duplicates, no clobbered MCP servers).
 
 - Idempotent reconcile: re-running on an unchanged tree is a no-op; editing
   a file updates only changed symbols. Doc id = `sha1(file_path::symbol_name::kind)`.
@@ -163,6 +170,6 @@ for the same index) and performs an active-writer preflight before startup.
 ## Reference
 
 - Repo layout, indexing model, coding standards: `AGENTS.md` in the dowse repo.
-- CLI flags: `dowse index --help`, `dowse query --help`, `dowse serve --help`.
+- CLI flags: `dowse index --help`, `dowse query --help`, `dowse init --help`, `dowse serve --help`.
 - Schema and hybrid query internals: `dowse/store.py`, `dowse/service.py`.
 - Copy-pasteable `jq` recipes and troubleshooting: see [EXAMPLES.md](EXAMPLES.md).

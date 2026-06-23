@@ -14,7 +14,7 @@ dowse/
   embed.py        # sentence-transformers wrapper (lazy-loaded)
   store.py        # zvec schema, idempotent indexing, hybrid query
   service.py      # core index/query logic (one impl, shared)
-  cli.py          # Typer CLI: `index`, `query`, `status`, `serve`
+  cli.py          # Typer CLI: `index`, `query`, `status`, `doctor`, `init`, `serve`
   server.py       # MCP (FastMCP) stdio server wrapping the same logic
 requirements.txt
 pyproject.toml    # installs the `dowse` entrypoint; extras: [mcp], [go], ...
@@ -116,6 +116,38 @@ agents debugging setup.
 
 ```bash
 dowse doctor --root ./my_project
+```
+
+## One-command bootstrap
+
+`dowse init` wires a repo for agent use in one step: it writes or merges
+`.mcp.json` with a `dowse` server entry, adds `.dowse_index/` to `.gitignore`,
+reports any missing grammar extras, and runs the initial index.
+
+```bash
+dowse init ./my_project                         # full bootstrap with initial index
+dowse init ./my_project --skip-index             # config + gitignore only, no index
+dowse init ./my_project --db ./my_project/.dowse_index  # explicit db path
+```
+
+The generated `.mcp.json` uses the global `dowse` command (not a dev venv path)
+and runs `serve --db .dowse_index` relative to the repo root. Re-running `init`
+is idempotent: no duplicate `.gitignore` lines, no clobbered MCP servers, no
+duplicate `dowse` entries.
+
+```json
+{
+  "status": "ok",
+  "workspace": {"root": "/path/to/my_project", "db_path": "/path/to/my_project/.dowse_index"},
+  "mcp_config": {"created": true, "merged": false},
+  "gitignore": {"path": "/path/to/my_project/.gitignore"},
+  "missing_grammars": [
+    {"language": "go", "extensions": [".go"], "file_count": 12,
+     "install_hint": "pip install \"dowse[go]\""}
+  ],
+  "index": {"status": "ok", "indexed_files": 42, "indexed_symbols": 311, "dimension": 384,
+            "db": "/path/to/my_project/.dowse_index", "elapsed_seconds": 8.4}
+}
 ```
 
 ## Querying (hybrid search)

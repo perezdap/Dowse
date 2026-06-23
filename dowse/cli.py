@@ -5,6 +5,7 @@ Commands:
   query   embed a natural-language string / error, hybrid-search, emit JSON
   status  report index health (exists, stale, missing grammars)
   doctor  install + index + lock + harness diagnostics as JSON
+  init    one-command bootstrap: MCP config, gitignore, coverage, index
   serve   expose index/query as MCP tools over stdio for a coding harness
 
 Design rule: stdout carries ONLY machine-readable JSON. All human/progress
@@ -152,6 +153,31 @@ def doctor(
     db_path = Path(db) if db else root_path / ".dowse_index"
     try:
         payload = service.run_doctor(db=db_path, root=root_path)
+    except LockedIndexError as exc:
+        _locked_index_exit(exc)
+    _emit(payload)
+
+
+@app.command()
+def init(
+    path: Path = typer.Argument(..., exists=True, file_okay=False, help="Directory to initialise."),
+    db: Optional[Path] = typer.Option(
+        None, "--db",
+        help="Index path. Defaults to <path>/.dowse_index.",
+    ),
+    model: str = typer.Option(DEFAULT_MODEL, "--model", help="sentence-transformers model."),
+    skip_index: bool = typer.Option(
+        False, "--skip-index",
+        help="Write MCP config and gitignore but do not run an initial index.",
+    ),
+):
+    """One-command bootstrap: MCP config, .gitignore, grammar coverage, index."""
+    root_path = Path(path).resolve()
+    db_path = Path(db).resolve() if db else root_path / ".dowse_index"
+    try:
+        payload = service.run_init(
+            root=root_path, db=db_path, model=model, skip_index=skip_index, log=_err,
+        )
     except LockedIndexError as exc:
         _locked_index_exit(exc)
     _emit(payload)
