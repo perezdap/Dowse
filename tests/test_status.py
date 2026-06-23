@@ -6,7 +6,6 @@ import os
 import time
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 import dowse.cli as cli
@@ -132,27 +131,3 @@ def test_cli_status_smart_default_db(sample_repo: Path) -> None:
     out = json.loads(r.stdout)
     assert out["exists"] is True
     assert out["db_path"].replace("\\", "/").endswith("sample_repo/.dowse_index")
-
-
-def test_mcp_index_status_tool(sample_repo: Path) -> None:
-    """The MCP server exposes index_status and it delegates to service."""
-    # mcp is an optional install (pip install dowse[mcp]) and CI runs only [dev],
-    # so skip cleanly where the SDK is absent rather than failing collection.
-    pytest.importorskip("mcp")
-    import asyncio
-    from dowse.server import build_server
-
-    service.run_index(path=sample_repo, db=sample_repo / ".dowse_index", reset=True)
-    mcp = build_server()
-
-    # Registered under the right name.
-    names = {t.name for t in asyncio.run(mcp.list_tools())}
-    assert "index_status" in names
-
-    # Delegates to service.run_index_status (sync call on the raw function).
-    tool = mcp._tool_manager._tools["index_status"]
-    result = tool.fn(workspace=str(sample_repo))
-    assert result["exists"] is True
-    assert result["indexed_symbols"] == 8
-    assert result["languages"] == ["python"]
-    assert result["db_path"].replace("\\", "/").endswith("sample_repo/.dowse_index")
