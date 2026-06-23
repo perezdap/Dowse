@@ -322,6 +322,7 @@ dev = [
     { name = "ruff" },
     { name = "tree-sitter-bash" },
     { name = "tree-sitter-rust" },
+    { name = "tree-sitter-typescript" },
 ]
 go = [
     { name = "tree-sitter-go" },
@@ -360,6 +361,7 @@ requires-dist = [
     { name = "tree-sitter-rust", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "tree-sitter-rust", marker = "extra == 'rust'", specifier = ">=0.24" },
     { name = "tree-sitter-typescript", marker = "extra == 'all-langs'", specifier = ">=0.23" },
+    { name = "tree-sitter-typescript", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "tree-sitter-typescript", marker = "extra == 'typescript'", specifier = ">=0.23" },
     { name = "typer", specifier = ">=0.12" },
     { name = "zvec", specifier = ">=0.5.0" },

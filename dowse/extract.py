@@ -30,7 +30,9 @@ def _load(module_name: str) -> Callable[[], object] | None:
         mod = __import__(module_name)
     except ImportError:
         return None
-    return mod.language
+    # Most grammar wheels expose `language()`. The TypeScript wheel exposes
+    # split entrypoints instead (`language_typescript()` / `language_tsx()`).
+    return getattr(mod, "language", None) or getattr(mod, "language_typescript", None)
 
 
 @dataclass(frozen=True)
