@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- `dowse doctor` — JSON diagnostics for Python/dowse install, MCP SDK presence,
+  index health (via `run_index_status`), serve/index lock probes, and
+  `.mcp.json` / `.cursor/mcp.json` harness wiring hints.
+
 ### Changed
 - `dowse index`, `dowse query`, `dowse status`, and `dowse serve` now report
   locked zvec collections with a concise stderr message and exit code 1 instead

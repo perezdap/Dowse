@@ -118,3 +118,22 @@ def acquire_server_lock(db: str | Path) -> ServerLock:
     fh.write(f"{os.getpid()}\n")
     fh.flush()
     return ServerLock(path, fh)
+
+
+def probe_server_lock(db: str | Path) -> dict[str, object]:
+    """Return whether another ``dowse serve`` holds the lock (non-mutating probe)."""
+    path = lock_path_for(db)
+    try:
+        lock = acquire_server_lock(db)
+    except ServerLockHeld as exc:
+        return {
+            "lock_path": str(path),
+            "held": True,
+            "holder_pid": exc.holder_pid,
+        }
+    lock.release()
+    return {
+        "lock_path": str(path),
+        "held": False,
+        "holder_pid": None,
+    }

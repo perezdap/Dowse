@@ -7,11 +7,16 @@ how to present it.
 """
 from __future__ import annotations
 
+import json
+import sys
 import threading
 import time
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Callable, Iterator, Optional
+
+import dowse as dowse_pkg
 
 from .embed import DEFAULT_MODEL, Embedder
 from .extract import (
@@ -21,7 +26,8 @@ from .extract import (
     supported_extensions,
     walk_directory,
 )
-from .store import Store
+from .store import LockedIndexError, Store
+from .server_lock import probe_server_lock
 
 # Cache embedders by model name so repeated queries in a long-lived process
 # (notably the MCP server) don't reload the model every call.
@@ -281,6 +287,99 @@ def _is_stale(root: str | Path, last_indexed: float | None) -> bool | None:
         except OSError:
             continue
     return False
+
+
+def _mcp_sdk_info() -> dict:
+    try:
+        import mcp  # noqa: F401
+    except ModuleNotFoundError:
+        return {"installed": False, "version": None}
+    try:
+        ver = version("mcp")
+    except PackageNotFoundError:
+        ver = None
+    return {"installed": True, "version": ver}
+
+
+def _dowse_install_info() -> dict:
+    try:
+        pkg_version = version("dowse")
+    except PackageNotFoundError:
+        pkg_version = getattr(dowse_pkg, "__version__", None)
+    module_root = Path(dowse_pkg.__file__).resolve().parent
+    return {
+        "python_version": sys.version.split()[0],
+        "dowse_version": pkg_version,
+        "dowse_module": str(module_root),
+        "mcp_sdk": _mcp_sdk_info(),
+    }
+
+
+def _probe_index_access(db: Path) -> dict:
+    if not db.exists() or not any(db.iterdir()):
+        return {"readable": False, "locked": False}
+    try:
+        with _index_lock(db):
+            store = Store.open_readonly(db)
+            del store
+        return {"readable": True, "locked": False}
+    except LockedIndexError:
+        return {"readable": False, "locked": True}
+
+
+def _mcp_config_has_dowse(data: dict) -> bool:
+    for key in ("mcpServers", "servers"):
+        block = data.get(key)
+        if not isinstance(block, dict):
+            continue
+        if "dowse" in block:
+            return True
+        for cfg in block.values():
+            if not isinstance(cfg, dict):
+                continue
+            cmd = str(cfg.get("command") or cfg.get("cmd") or "")
+            if "dowse" in cmd.lower():
+                return True
+    return False
+
+
+def _harness_mcp_configs(root: Path) -> dict[str, dict]:
+    configs: dict[str, dict] = {}
+    for name in (".mcp.json", ".cursor/mcp.json"):
+        path = root / name
+        entry: dict = {"present": path.is_file(), "has_dowse_server": False}
+        if path.is_file():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    entry["has_dowse_server"] = _mcp_config_has_dowse(data)
+            except (OSError, json.JSONDecodeError):
+                pass
+        configs[name] = entry
+    return configs
+
+
+def run_doctor(
+    db: str | Path | None = None,
+    root: str | Path | None = None,
+) -> dict:
+    """Unified health report: install, index, locks, and harness MCP config."""
+    root_path = Path(root).resolve() if root else Path.cwd().resolve()
+    db_path = Path(db).resolve() if db else root_path / ".dowse_index"
+
+    index_status = run_index_status(db=db_path, root=root_path)
+
+    return {
+        "status": "ok",
+        "workspace": {"root": str(root_path), "db_path": str(db_path)},
+        "install": _dowse_install_info(),
+        "index": index_status,
+        "locks": {
+            "serve": probe_server_lock(db_path),
+            "index": _probe_index_access(db_path),
+        },
+        "harness": {"mcp_configs": _harness_mcp_configs(root_path)},
+    }
 
 
 def run_query(
