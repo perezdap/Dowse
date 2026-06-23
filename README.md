@@ -22,9 +22,24 @@ pyproject.toml    # installs the `dowse` entrypoint; extras: [mcp], [go], ...
 
 ## Install
 
+### End-user install
+
+Install `dowse` into an existing Python environment when you want to index or query code without a development checkout:
+
+```bash
+pip install dowse
+pip install "dowse[mcp]"           # add the MCP server dependencies
+pip install "dowse[mcp,all-langs]" # add MCP + every optional grammar
+```
+
+### Development
+
+Use an editable install when you are working on dowse itself:
+
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -e .
+pip install -e ".[dev]"
+pip install -e ".[dev,mcp]"   # if you want to exercise `dowse serve`
 ```
 
 This was built and tested against `zvec 0.5.0`, `tree-sitter 0.25.2`, `tree-sitter-python 0.25.0`, `tree-sitter-powershell 0.26.4`, `tree-sitter-c-sharp 0.23.5`, `typer 0.26`, on CPython 3.12. zvec ships prebuilt wheels for Linux (x86_64/ARM64), macOS (ARM64), and **Windows x86-64** (added in zvec 0.3.0) — so on Windows just use 64-bit Python 3.12 and `pip install` works with no compiler. The first `index`/`query` downloads the ~80 MB MiniLM model once, then runs fully offline.
