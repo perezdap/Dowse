@@ -17,7 +17,23 @@ class Embedder:
 
     @cached_property
     def _model(self):
+        import os
+
+        from huggingface_hub import try_to_load_from_cache
         from sentence_transformers import SentenceTransformer
+
+        # Suppress cosmetic HF/transformers stderr noise (unauthenticated
+        # warning, weight-loading progress bar) without touching user-set env.
+        os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+        os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+        # If the model is already cached locally, skip the hub version check
+        # entirely — eliminates the per-invocation network ping and its
+        # "unauthenticated" warning on every CLI query.
+        cached = try_to_load_from_cache(self.model_name, "config.json")
+        if cached is not None and not str(cached).startswith("none"):
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
         return SentenceTransformer(self.model_name)
 
     @property
