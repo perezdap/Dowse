@@ -143,7 +143,17 @@ dowse init ./my_project                         # full bootstrap with initial in
 dowse init ./my_project --skip-index             # config + gitignore only, no index
 dowse init ./my_project --db ./my_project/.dowse_index  # explicit db path
 dowse init ./my_project --harness pi             # Pi preset for pi-mcp-adapter
+dowse init ./my_project --auto-index             # also install Cursor sessionStart hook (once per machine)
+dowse hook install                               # same hook installer without re-running init
 ```
+
+**Opt-in Cursor auto-index:** `dowse hook install` (or `init --auto-index`) adds a
+user-level `sessionStart` hook in `~/.cursor/hooks.json` that runs
+`dowse hook session-start`. Dowse only indexes workspaces that already opted in via
+`dowse init` (`.dowse_index/` present). Hook failures are **fail-open** — they never
+block Cursor. A concurrent `dowse serve` or another indexer may hold the zvec lock;
+the hook logs to stderr and exits successfully. For Pi / Claude Code, prefer MCP
+`index_status` → `index_codebase` on a long-lived `dowse serve` instead of hooks.
 
 The generated `.mcp.json` uses the global `dowse` command (not a dev venv path)
 and runs `serve --db .dowse_index` relative to the repo root. Re-running `init`

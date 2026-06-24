@@ -537,6 +537,7 @@ def run_init(
     model: str = DEFAULT_MODEL,
     skip_index: bool = False,
     harness: str | None = None,
+    auto_index: bool = False,
     log: Callable[[str], None] | None = None,
 ) -> dict:
     """One-command project bootstrap: MCP config, gitignore, coverage, index.
@@ -545,6 +546,7 @@ def run_init(
     - Adds ``.dowse_index/`` to ``.gitignore`` idempotently (#16)
     - Reports missing grammar coverage (#5)
     - Runs an initial index unless ``skip_index`` is True (#5)
+    - Optionally installs Cursor sessionStart hook when ``auto_index`` is True (#19)
     """
     def _log(msg: str) -> None:
         if log:
@@ -574,7 +576,19 @@ def run_init(
             path=root_path, db=db_path, model=model, reset=False, log=_log,
         )
 
-    return {
+    auto_index_result = None
+    if auto_index:
+        from . import cursor_hooks as _cursor_hooks
+
+        _log("[init] installing Cursor sessionStart hook (opt-in auto-index) ...")
+        hook = _cursor_hooks.install_cursor_session_hook()
+        auto_index_result = {
+            "installed": True,
+            "target": hook["target"],
+            "hooks_path": hook["hooks_path"],
+        }
+
+    payload = {
         "status": "ok",
         "workspace": {"root": str(root_path), "db_path": str(db_path)},
         "mcp_config": mcp_result,
@@ -583,6 +597,9 @@ def run_init(
         "missing_grammars": missing,
         "index": index_summary,
     }
+    if auto_index_result is not None:
+        payload["auto_index"] = auto_index_result
+    return payload
 
 
 def estimate_tokens(text: str) -> int:
