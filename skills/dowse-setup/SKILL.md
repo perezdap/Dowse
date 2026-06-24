@@ -7,21 +7,29 @@ description: Install, configure, and onboard the dowse local code Context Engine
 
 `dowse` is a local code Context Engine: tree-sitter extracts function/class
 symbols, sentence-transformers embeds them, zvec stores vectors, and a hybrid
-(dense + lexical re-rank) query returns ranked JSON snippets. Three surfaces:
-`dowse index`, `dowse query`, `dowse serve` (MCP stdio). stdout is JSON only;
+(dense + lexical re-rank) query returns ranked JSON snippets. Main surfaces:
+`dowse init`, `dowse index`, `dowse query`, `dowse serve` (MCP stdio). stdout is JSON only;
 progress goes to stderr. Windows-first; CPython 3.12; runs fully offline after
 the first model download (~80 MB MiniLM).
 
 ## Quick start (PowerShell)
 
+**End users (global CLI):** `pipx install "dowse[mcp]"` or `uv tool install "dowse[mcp]"` so
+`dowse` is on PATH for MCP and Cursor hooks.
+
+**Developers (this repo):**
+
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -e ".[dev]"          # or: pip install dowse
-dowse --help                      # sanity check
-dowse index .\path\to\repo --db .\.dowse_index
-dowse query "how does auth work" --db .\.dowse_index
+pip install -e ".[dev,mcp]"
+dowse --help
+dowse init ./repo --harness pi          # MCP preset + index (Pi: install pi-mcp-adapter separately)
+dowse query "how does auth work" --db ./repo/.dowse_index
 ```
+
+Optional Cursor session freshness (once per machine): `dowse hook install` or
+`dowse init ./repo --auto-index`.
 
 ## Workflows
 
@@ -43,10 +51,12 @@ runtime and breaks offline use. Per-language wheels are self-contained.
 ### 2. Index
 
 ```powershell
-dowse init .\repo --db .\.dowse_index         # one-command bootstrap: MCP config + gitignore + index
-dowse index .\repo --db .\.dowse_index           # incremental, idempotent
-dowse index .\repo --db .\.dowse_index --reset    # clean rebuild
-dowse index .\packages --db .\.dowse_index --definitions   # YAML/Markdown sections
+dowse init ./repo --db ./.dowse_index         # one-command bootstrap: MCP + gitignore + index
+dowse init ./repo --harness pi                # Pi preset (directTools for pi-mcp-adapter)
+dowse init ./repo --auto-index                # also install Cursor sessionStart hook (machine-wide)
+dowse index ./repo --db ./.dowse_index           # incremental, idempotent
+dowse index ./repo --db ./.dowse_index --reset    # clean rebuild
+dowse index ./packages --db ./.dowse_index --definitions   # YAML/Markdown sections
 ```
 
 `dowse init` is the fastest path from fresh clone to working MCP: it writes or
@@ -67,9 +77,9 @@ idempotent (no duplicates, no clobbered MCP servers).
 ### 3. Query
 
 ```powershell
-dowse query "how are auth tokens generated" --db .\.dowse_index
-dowse query "RuntimeError: pool exhausted" --kind function -n 5 --db .\.dowse_index
-dowse query "retry with backoff" --db .\.dowse_index | jq -r '.results[] | "\(.file_path):\(.start_line)"'
+dowse query "how are auth tokens generated" --db ./.dowse_index
+dowse query "RuntimeError: pool exhausted" --kind function -n 5 --db ./.dowse_index
+dowse query "retry with backoff" --db ./.dowse_index | jq -r '.results[] | "\(.file_path):\(.start_line)"'
 ```
 
 - Hybrid: `final = 0.7·dense + 0.3·lexical`. Pasting raw error messages works
@@ -85,11 +95,11 @@ dowse query "retry with backoff" --db .\.dowse_index | jq -r '.results[] | "\(.f
 
 ```powershell
 pip install "dowse[mcp]"
-dowse serve --db .\.dowse_index
+dowse serve --db ./.dowse_index
 ```
 
-Two tools: `query_context` (semantic recall — describe behaviour or paste an
-error; complements grep/glob) and `index_codebase` (build/refresh, idempotent).
+Three MCP tools: `query_context` (semantic recall), `index_codebase` (build/refresh),
+and `index_status` (exists/stale/missing grammars — call before indexing).
 
 Register with Claude Desktop / Claude Code
 (`%APPDATA%\Claude\claude_desktop_config.json` on Windows):
@@ -113,7 +123,7 @@ collection regardless of launch cwd.
 Lock identity is the **resolved `--db` path**, not the repo. Two strategies:
 
 - **Per-worktree index (recommended for parallel agents).** Each worktree uses
-  a relative `--db .\.dowse_index`, which resolves to a different absolute path
+  a relative `--db ./.dowse_index`, which resolves to a different absolute path
   per worktree. Separate collection, separate `<db>.serve.lock` → **zero
   contention**: every agent can index, query, and serve at once. Cost: each
   worktree builds its own index (the ~80 MB model is shared via the HF cache;
@@ -125,34 +135,26 @@ Lock identity is the **resolved `--db` path**, not the repo. Two strategies:
   server lock matter: many concurrent readers (`query`/`status`), one writer
   (`index`), and a single `dowse serve`. Prefer one long-lived shared server.
 
-### 5. Hooks (optional, SessionStart only)
+### 5. Hooks (optional, Cursor sessionStart)
 
-A SessionStart hook keeps the index fresh per session:
+For **Cursor** only, install a user-level hook once (requires global `dowse` on PATH):
 
-```json
-{
-  "hooks": {
-    "SessionStart": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "dowse index . --db .\\.dowse_index 2>nul"
-      }]
-    }]
-  }
-}
+```powershell
+dowse hook install
+# or: dowse init ./repo --auto-index
 ```
 
-**Avoid PostToolUse / per-edit hooks** — `run_index` re-walks and re-parses
-the whole tree every call (only the zvec upsert is incremental). For
-in-session freshness, instruct the agent to call the `index_codebase` MCP
-tool after substantial edits — that keeps all DB access in the server
-process. `dowse query` and `dowse status` use read-only zvec opens, so
-separate agents can query one `.dowse_index` concurrently. Writers still
-exclude readers: `index` / `index_codebase` can contend with queries or another
-server, but dowse reports that as a concise stderr error. `dowse serve` also
-holds a dedicated `<db>.serve.lock` for its lifetime (preventing a second server
-for the same index) and performs an active-writer preflight before startup.
+This merges into `%USERPROFILE%\.cursor\hooks.json` (Cursor `version: 1` schema) a
+`sessionStart` command that runs `dowse hook session-start`. That command
+incrementally indexes only workspaces that already ran `dowse init` (`.dowse_index/`
+present). **Fail-open** — hook errors never block Cursor. If `dowse serve` or another
+indexer holds the zvec lock, the hook logs to stderr and exits successfully.
+
+For **Pi / Claude Code**, prefer a long-lived `dowse serve` and MCP
+`index_status` → `index_codebase` instead of hooks.
+
+**Avoid PostToolUse / per-edit hooks** — `run_index` re-walks the tree each call.
+For in-session freshness after big edits, use the `index_codebase` MCP tool.
 
 ## Gotchas
 
@@ -170,6 +172,6 @@ for the same index) and performs an active-writer preflight before startup.
 ## Reference
 
 - Repo layout, indexing model, coding standards: `AGENTS.md` in the dowse repo.
-- CLI flags: `dowse index --help`, `dowse query --help`, `dowse init --help`, `dowse serve --help`.
+- CLI flags: `dowse index --help`, `dowse query --help`, `dowse init --help`, `dowse hook --help`, `dowse serve --help`.
 - Schema and hybrid query internals: `dowse/store.py`, `dowse/service.py`.
 - Copy-pasteable `jq` recipes and troubleshooting: see [EXAMPLES.md](EXAMPLES.md).
