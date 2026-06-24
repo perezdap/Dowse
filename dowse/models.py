@@ -14,7 +14,7 @@ class Symbol:
     file_path: str      # POSIX-normalised, relative to the indexed root
     symbol_name: str    # qualified, e.g. "Widget.render" or "7zip.install"
     kind: str           # "function" | "class" | "section"
-    language: str       # "python" | "powershell" | "yaml" | "markdown" | ...
+    language: str       # "python" | "powershell" | "yaml" | "markdown" | "msbuild" | ...
     start_line: int     # 1-based, inclusive
     end_line: int
     code_content: str

@@ -10,7 +10,7 @@ No TUI, no dashboards, no progress bars. `stdout` is JSON only; all human/progre
 dowse/
   models.py       # the Symbol record shared by all extractors
   extract.py      # tree-sitter -> flattened function/class symbols
-  definitions.py  # PSADT YAML profiles + Markdown definitions -> sections
+  definitions.py  # YAML/Markdown/.NET project definitions -> sections
   embed.py        # sentence-transformers wrapper (lazy-loaded)
   store.py        # zvec schema, idempotent indexing, hybrid query
   service.py      # core index/query logic (one impl, shared)
@@ -183,19 +183,24 @@ Register it with a harness by pointing at the command. For Claude Code / Claude 
 
 This deliberately uses the FastMCP class bundled with the official `mcp` SDK rather than the standalone `fastmcp` package — the latter's v3 line rebuilt its architecture and auth model in early 2026, and for a local two-tool stdio server the bundled one is the stable, lower-churn choice.
 
-## PSADT package definitions (YAML & Markdown)
+## Definition files (YAML, Markdown, .NET/MSBuild)
 
-Declarative package definitions aren't code, so the function/class model doesn't fit them — but they're often exactly what you want to search ("what's the uninstall command for 7zip"). Pass `--definitions` (`-D`) to additionally index them as **sections**:
+Declarative definition files aren't code, so the function/class model doesn't fit them — but they're often exactly what you want to search ("what's the uninstall command for 7zip", "which target framework does this project use", "where is this build target defined"). Pass `--definitions` (`-D`) to additionally index them as **sections**:
 
 ```bash
 dowse index ./packages --db ./.dowse_index --definitions
 dowse query "silent uninstall command" --db ./.dowse_index --lang yaml
+
+dowse index ./dotnet-repo --db ./.dowse_index --definitions
+dowse query "target framework and nullable settings" --db ./.dowse_index --lang msbuild
+dowse query "custom GenerateVersion build target" --db ./.dowse_index --kind section --lang msbuild
 ```
 
 - **YAML profiles** (Payload-style): each top-level key becomes a section, qualified by the package name if the file has a `name:`/`id:`/`packageName:` field — e.g. `7zip.install`, `7zip.uninstall`, `7zip.detection`.
 - **Markdown definitions** (PowerPacker-style): each ATX heading becomes a section qualified by its heading ancestry — e.g. `Google Chrome.Install`, `Google Chrome.Install.Pre-Install`. Headings inside fenced code blocks are ignored.
+- **.NET/MSBuild XML** (`.csproj`, `.props`, `.targets`): `PropertyGroup`, `ItemGroup`, `ItemDefinitionGroup`, and `Target` blocks become sections, qualified by the file name and useful child names — e.g. `App.PropertyGroup.TargetFramework.Nullable`, `App.ItemGroup.PackageReference.Microsoft Extensions Logging.ProjectReference.Shared`, `Custom.Target.GenerateVersion.Message.WriteLinesToFile`.
 
-Both extractors are pure-stdlib (no PyYAML, no Markdown parser): they scan structure rather than strictly parse, which is more forgiving of half-finished files. The flag is **opt-in** so a normal code index doesn't slurp every `README.md` and CI YAML in the repo. The sections land in the same collection with `language` set to `yaml`/`markdown` and `kind` set to `section`, so you can filter them with `--lang yaml` or `--kind section`. To add other declarative formats, drop an extractor into `definitions.py` and register its extension.
+These extractors are pure-stdlib (no PyYAML, no Markdown parser, no MSBuild SDK): they scan regular structure and use Python's built-in XML parser where useful, which is more forgiving of half-finished files than a strict project-system dependency. The flag is **opt-in** so a normal code index doesn't slurp every `README.md`, CI YAML, or project metadata file in the repo. The sections land in the same collection with `kind` set to `section` and `language` set to `yaml`, `markdown`, or `msbuild`, so you can filter them with `--lang msbuild` or `--kind section`. To add other declarative formats, drop an extractor into `definitions.py` and register its extension.
 
 
 
@@ -223,10 +228,10 @@ PowerShell needs no `name` field handling out of the box — the grammar puts id
 
 When a grammar is missing, `dowse index` reports it, e.g. `skipped 12 .go files (go) - pip install "dowse[go]"`, so polyglot repos never fail silently.
 
-**Deliberately not auto-handled:** declarative/data formats (Bicep, YAML, `.psd1`) don't have a function/class shape, so the symbol model doesn't fit them. If you want your PSADT YAML profiles or Markdown package definitions searchable, that's better served by a small custom extractor (split on top-level keys / headings) than by forcing a code grammar — say the word and it's a ~20-line addition.
+**Deliberately not auto-handled:** most declarative/data formats (Bicep, `.psd1`, arbitrary XML/JSON) don't have a function/class shape, so the symbol model doesn't fit them. The definition extractors above are explicit opt-ins for formats with a stable section shape; other formats should get similarly small custom extractors rather than being forced through a code grammar.
 
 > Avoid `tree-sitter-language-pack` for this tool. Despite advertising bundled wheels, version 1.8.1 fetches grammars from GitHub releases on first use — it fails the moment the network is blocked, which defeats the offline/locked-down goal. The per-language wheels above are genuinely self-contained.
 
 ## What was verified
 
-Exercised end-to-end in a sandbox: tree-sitter extraction for Python, PowerShell, and C# (loaded offline from self-contained wheels, with correct qualified-name resolution); the full zvec lifecycle (schema, upsert, filtered queries, cosine distance→similarity, idempotent reconcile on edits); the YAML/Markdown definition extractors (package-name and heading-ancestry qualification, fence-aware); the CLI; and the MCP server (both tools register with correct schemas, and an in-process `query_context` call returns ranked results). The one piece run only through its standard, stable API — not against a downloaded model in the sandbox — is the `sentence-transformers` `encode()` call in `embed.py`; the first real `index` will download MiniLM and exercise it. Likewise the MCP server was verified in-process via the SDK's own client API rather than over a live stdio pipe to an external harness.
+Exercised end-to-end in a sandbox: tree-sitter extraction for Python, PowerShell, and C# (loaded offline from self-contained wheels, with correct qualified-name resolution); the full zvec lifecycle (schema, upsert, filtered queries, cosine distance→similarity, idempotent reconcile on edits); the YAML/Markdown/.NET definition extractors (package-name and heading-ancestry qualification, fence-aware Markdown, MSBuild property/item/target sections, malformed XML fallback); the CLI; and the MCP server (both tools register with correct schemas, and an in-process `query_context` call returns ranked results). The one piece run only through its standard, stable API — not against a downloaded model in the sandbox — is the `sentence-transformers` `encode()` call in `embed.py`; the first real `index` will download MiniLM and exercise it. Likewise the MCP server was verified in-process via the SDK's own client API rather than over a live stdio pipe to an external harness.
