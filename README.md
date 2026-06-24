@@ -171,6 +171,9 @@ dowse query "where do we validate JWT claims" --db ./.dowse_index \
 
 # Raw zvec filter for anything the shortcuts don't cover
 dowse query "db connection" --filter "language = 'python' AND file_path LIKE 'pkg/%'"
+
+# Estimate prompt-token savings versus the full files containing the returned snippets
+dowse query "retry with backoff" --tokens --root ./my_project --db ./.dowse_index
 ```
 
 Query output shape:
@@ -189,6 +192,28 @@ Query output shape:
   ]
 }
 ```
+
+With `--tokens`, the same JSON payload includes a `token_savings` report:
+
+```json
+{
+  "token_savings": {
+    "estimator": "regex-v1",
+    "snippet_tokens": 120,
+    "full_file_tokens": 980,
+    "saved_tokens": 860,
+    "reduction_percent": 87.76,
+    "results": [
+      {"rank": 1, "file_path": "pkg/db.py", "symbol_name": "Connection.query", "snippet_tokens": 42}
+    ],
+    "files": [
+      {"file_path": "pkg/db.py", "full_file_tokens": 230}
+    ]
+  }
+}
+```
+
+The token report uses a lightweight deterministic approximation (`regex-v1`) that counts code-like words, numbers, and punctuation. It is not model-tokenizer exact, but it is stable, dependency-free, and good enough to show relative savings. Full-file comparison counts each of the full files containing the returned snippets once, so multiple snippets from one file do not double-count the baseline.
 
 Tuning knobs: `--top/-n`, `--candidates` (dense pool size before re-rank), `--w-dense` / `--w-lexical`. Use the same `--model` for `query` as you used for `index`.
 

@@ -28,3 +28,12 @@ def test_readme_separates_user_and_development_installs() -> None:
     assert "### Development" in readme
     assert "pip install dowse" in readme
     assert 'pip install -e ".[dev]"' in readme
+
+
+def test_readme_documents_query_token_savings_report() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "dowse query \"retry with backoff\" --tokens" in readme
+    assert '"token_savings"' in readme
+    assert "regex-v1" in readme
+    assert "full files containing the returned snippets" in readme

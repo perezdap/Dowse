@@ -7,6 +7,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import dowse.cli as cli
+import dowse.extract as extract
 import dowse.service as service
 
 runner = CliRunner()
@@ -98,8 +99,12 @@ def test_init_preserves_existing_gitignore_content(tmp_path: Path) -> None:
 # Language coverage (#5)
 # ---------------------------------------------------------------------------
 
-def test_init_reports_missing_grammars(tmp_path: Path) -> None:
+def test_init_reports_missing_grammars(tmp_path: Path, monkeypatch) -> None:
     """run_init reports languages present on disk but without installed grammars."""
+    # Pretend the Go grammar is absent regardless of the real environment.
+    patched = {k: v for k, v in extract._REGISTRY.items() if k != ".go"}
+    monkeypatch.setattr(extract, "_REGISTRY", patched)
+
     (tmp_path / "main.go").write_text("package main\n", encoding="utf-8")
 
     result = service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
