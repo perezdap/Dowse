@@ -1,6 +1,6 @@
 [project]
 name = "dowse"
-version = "0.1.1"
+version = "0.2.0"
 description = "Fluff-free local code Context Engine: tree-sitter extraction + zvec hybrid retrieval."
 readme = "README.md"
 license = { file = "LICENSE" }

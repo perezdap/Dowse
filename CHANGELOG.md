@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-24
+
 ### Added
 - **Cursor session auto-index (opt-in, #4 / #19):** `dowse hook install` merges a
   `sessionStart` entry into `~/.cursor/hooks.json` that runs `dowse hook
