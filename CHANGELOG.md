@@ -8,6 +8,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- `dowse init` — one-command project bootstrap: writes or merges `.mcp.json`
+  with a `dowse` server entry, adds `.dowse_index/` to `.gitignore`
+  idempotently, reports missing grammar coverage, and runs an initial index.
+  Supports `--skip-index` for config-only runs.
 - `dowse doctor` — JSON diagnostics for Python/dowse install, MCP SDK presence,
   index health (via `run_index_status`), serve/index lock probes, and
   `.mcp.json` / `.cursor/mcp.json` harness wiring hints.
