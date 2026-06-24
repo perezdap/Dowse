@@ -37,3 +37,12 @@ def test_readme_documents_query_token_savings_report() -> None:
     assert '"token_savings"' in readme
     assert "regex-v1" in readme
     assert "full files containing the returned snippets" in readme
+
+
+def test_readme_documents_pi_init_preset() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "dowse init ./my_project --harness pi" in readme
+    assert "directTools" in readme
+    assert "pi-mcp-adapter" in readme
+    assert "Pi core does not include MCP" in readme

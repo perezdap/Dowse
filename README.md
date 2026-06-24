@@ -128,12 +128,20 @@ reports any missing grammar extras, and runs the initial index.
 dowse init ./my_project                         # full bootstrap with initial index
 dowse init ./my_project --skip-index             # config + gitignore only, no index
 dowse init ./my_project --db ./my_project/.dowse_index  # explicit db path
+dowse init ./my_project --harness pi             # Pi preset for pi-mcp-adapter
 ```
 
 The generated `.mcp.json` uses the global `dowse` command (not a dev venv path)
 and runs `serve --db .dowse_index` relative to the repo root. Re-running `init`
 is idempotent: no duplicate `.gitignore` lines, no clobbered MCP servers, no
 duplicate `dowse` entries.
+
+The `--harness pi` preset keeps the same MCP server shape and adds
+`"directTools": true` for `pi-mcp-adapter`, so Dowse's MCP tools can appear as
+first-class Pi tools when the adapter supports direct tool promotion. **Pi core does not include MCP**; install Pi itself separately and install the adapter with
+`pi install npm:pi-mcp-adapter`. `dowse init --harness pi` only detects whether
+Pi and `pi-mcp-adapter` appear installed and reports guidance — it does not run
+`npm install` or `pi install` for you.
 
 ```json
 {
