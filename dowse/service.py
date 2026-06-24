@@ -8,6 +8,7 @@ how to present it.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 import time
@@ -32,6 +33,8 @@ from .server_lock import probe_server_lock
 # Cache embedders by model name so repeated queries in a long-lived process
 # (notably the MCP server) don't reload the model every call.
 _EMBEDDERS: dict[str, Embedder] = {}
+_TOKEN_ESTIMATOR = "regex-v1"
+_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]")
 
 
 def get_embedder(model: str = DEFAULT_MODEL) -> Embedder:
@@ -504,6 +507,64 @@ def run_init(
     }
 
 
+def estimate_tokens(text: str) -> int:
+    """Approximate prompt tokens with a deterministic, dependency-free regex."""
+    return len(_TOKEN_RE.findall(text))
+
+
+def _token_savings_report(results: list[dict], root: str | Path) -> dict:
+    root_path = Path(root)
+    snippet_total = 0
+    result_rows = []
+    for result in results:
+        snippet_tokens = estimate_tokens(str(result.get("code_content") or ""))
+        snippet_total += snippet_tokens
+        result_rows.append({
+            "rank": result.get("rank"),
+            "file_path": result.get("file_path"),
+            "symbol_name": result.get("symbol_name"),
+            "snippet_tokens": snippet_tokens,
+        })
+
+    file_rows = []
+    unavailable_files = []
+    full_file_total = 0
+    seen_files: set[str] = set()
+    for result in results:
+        file_path = result.get("file_path")
+        if not isinstance(file_path, str) or file_path in seen_files:
+            continue
+        seen_files.add(file_path)
+        source_path = root_path / file_path
+        try:
+            full_text = source_path.read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            unavailable_files.append({"file_path": file_path, "reason": "not_found"})
+            continue
+        except OSError:
+            unavailable_files.append({"file_path": file_path, "reason": "unreadable"})
+            continue
+        full_tokens = estimate_tokens(full_text)
+        full_file_total += full_tokens
+        file_rows.append({"file_path": file_path, "full_file_tokens": full_tokens})
+
+    saved_tokens = max(0, full_file_total - snippet_total)
+    reduction_percent = 0.0
+    if full_file_total:
+        reduction_percent = round(saved_tokens / full_file_total * 100, 2)
+
+    return {
+        "estimator": _TOKEN_ESTIMATOR,
+        "snippet_tokens": snippet_total,
+        "full_file_tokens": full_file_total,
+        "saved_tokens": saved_tokens,
+        "reduction_percent": reduction_percent,
+        "results": result_rows,
+        "files": file_rows,
+        "unavailable_files": unavailable_files,
+    }
+
+
 def run_query(
     text: str,
     db: str | Path = "./.dowse_index",
@@ -515,6 +576,8 @@ def run_query(
     lang: Optional[str] = None,
     w_dense: float = 0.7,
     w_lexical: float = 0.3,
+    root: str | Path | None = None,
+    include_token_report: bool = False,
 ) -> dict:
     """Hybrid-search the index; return {query, filter, results}."""
     sql_filter = build_filter(filter, kind, lang)
@@ -533,4 +596,7 @@ def run_query(
             w_lexical=w_lexical,
         )
         del store
-    return {"query": text, "filter": sql_filter, "results": results}
+    payload = {"query": text, "filter": sql_filter, "results": results}
+    if include_token_report:
+        payload["token_savings"] = _token_savings_report(results, root or Path.cwd())
+    return payload

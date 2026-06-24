@@ -104,12 +104,21 @@ def query(
     lang: Optional[str] = typer.Option(None, "--lang", help="Shortcut filter by language."),
     w_dense: float = typer.Option(0.7, "--w-dense", help="Weight for semantic similarity."),
     w_lexical: float = typer.Option(0.3, "--w-lexical", help="Weight for lexical overlap."),
+    root: Optional[Path] = typer.Option(
+        None, "--root",
+        help="Workspace root for --tokens full-file comparison. Defaults to cwd.",
+    ),
+    tokens: bool = typer.Option(
+        False, "--tokens",
+        help="Include approximate token savings versus containing full files.",
+    ),
 ):
     """Return the top-N most relevant code snippets as JSON."""
     try:
         payload = service.run_query(
             text=text, db=db, model=model, top=top, candidates=candidates,
             filter=filter, kind=kind, lang=lang, w_dense=w_dense, w_lexical=w_lexical,
+            root=root, include_token_report=tokens,
         )
     except LockedIndexError as exc:
         _locked_index_exit(exc)

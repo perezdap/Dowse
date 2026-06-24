@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -16,6 +17,11 @@ from dowse.server_lock import acquire_server_lock
 from dowse.store import Store
 
 runner = CliRunner()
+_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]")
+
+
+def _approx_tokens(text: str) -> int:
+    return len(_TOKEN_RE.findall(text))
 
 
 def _doc_count(db: str | Path) -> int:
@@ -69,6 +75,105 @@ def test_index_and_query(sample_repo: Path, db_path: Path) -> None:
     )
     out = json.loads(r.stdout)
     assert all(res["kind"] == "class" for res in out["results"])
+
+
+def test_query_token_report_compares_snippets_to_containing_files(
+    sample_repo: Path, db_path: Path
+) -> None:
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    payload = service.run_query(
+        "connection pool exhausted",
+        db=db_path,
+        top=1,
+        root=sample_repo,
+        include_token_report=True,
+    )
+
+    report = payload["token_savings"]
+    result = payload["results"][0]
+    full_file = (sample_repo / result["file_path"]).read_text()
+    snippet_tokens = _approx_tokens(result["code_content"])
+    full_file_tokens = _approx_tokens(full_file)
+
+    assert report["estimator"] == "regex-v1"
+    assert report["snippet_tokens"] == snippet_tokens
+    assert report["full_file_tokens"] == full_file_tokens
+    assert report["saved_tokens"] == full_file_tokens - snippet_tokens
+    assert report["reduction_percent"] == round(
+        (full_file_tokens - snippet_tokens) / full_file_tokens * 100,
+        2,
+    )
+    assert report["results"] == [
+        {
+            "rank": result["rank"],
+            "file_path": result["file_path"],
+            "symbol_name": result["symbol_name"],
+            "snippet_tokens": snippet_tokens,
+        }
+    ]
+    assert report["files"] == [
+        {"file_path": result["file_path"], "full_file_tokens": full_file_tokens}
+    ]
+
+
+def test_query_token_report_handles_missing_containing_files(
+    sample_repo: Path, db_path: Path
+) -> None:
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    (sample_repo / "pkg" / "db.py").unlink()
+
+    payload = service.run_query(
+        "connection pool exhausted",
+        db=db_path,
+        top=1,
+        root=sample_repo,
+        include_token_report=True,
+    )
+
+    report = payload["token_savings"]
+    result = payload["results"][0]
+    snippet_tokens = _approx_tokens(result["code_content"])
+
+    assert report["snippet_tokens"] == snippet_tokens
+    assert report["full_file_tokens"] == 0
+    assert report["saved_tokens"] == 0
+    assert report["reduction_percent"] == 0.0
+    assert report["files"] == []
+    assert report["unavailable_files"] == [
+        {"file_path": result["file_path"], "reason": "not_found"}
+    ]
+
+
+def test_cli_query_tokens_flag_emits_token_savings_report(
+    sample_repo: Path, db_path: Path
+) -> None:
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    r = runner.invoke(
+        cli.app,
+        [
+            "query",
+            "connection pool exhausted",
+            "--db",
+            str(db_path),
+            "--top",
+            "1",
+            "--root",
+            str(sample_repo),
+            "--tokens",
+        ],
+    )
+
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert r.stderr == ""
+    out = json.loads(r.stdout)
+    assert out["results"]
+    assert out["token_savings"]["estimator"] == "regex-v1"
+    assert out["token_savings"]["snippet_tokens"] > 0
+    assert out["token_savings"]["full_file_tokens"] > out["token_savings"]["snippet_tokens"]
+    assert out["token_savings"]["saved_tokens"] > 0
+    assert out["token_savings"]["reduction_percent"] > 0
 
 
 def test_cli_query_reports_locked_index_without_traceback(sample_repo: Path, db_path: Path) -> None:
