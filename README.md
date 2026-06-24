@@ -14,7 +14,7 @@ dowse/
   embed.py        # sentence-transformers wrapper (lazy-loaded)
   store.py        # zvec schema, idempotent indexing, hybrid query
   service.py      # core index/query logic (one impl, shared)
-  cli.py          # Typer CLI: `index`, `query`, `status`, `doctor`, `init`, `serve`
+  cli.py          # Typer CLI: `index`, `query`, `status`, `doctor`, `init`, `hook`, `serve`
   server.py       # MCP (FastMCP) stdio server wrapping the same logic
 requirements.txt
 pyproject.toml    # installs the `dowse` entrypoint; extras: [mcp], [go], ...

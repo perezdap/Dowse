@@ -32,6 +32,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `.mcp.json` / `.cursor/mcp.json` harness wiring hints.
 
 ### Changed
+- **Docs:** `AGENTS.md` and `skills/dowse-setup/SKILL.md` aligned with `hook install`,
+  `init --auto-index`, three MCP tools, and Pi/global install quickstart.
 - `dowse index`, `dowse query`, `dowse status`, and `dowse serve` now report
   locked zvec collections with a concise stderr message and exit code 1 instead
   of leaking a traceback. The message points harness users toward one long-lived

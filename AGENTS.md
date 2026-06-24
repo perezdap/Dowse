@@ -20,6 +20,10 @@ Primary surfaces:
 |---------|------|
 | `dowse index` | Build or refresh the index (incremental, idempotent) |
 | `dowse query` | Hybrid-search; emit ranked snippets as JSON |
+| `dowse status` | Index health, staleness, missing grammars |
+| `dowse doctor` | One-shot JSON diagnostics (install, locks, MCP wiring) |
+| `dowse init` | Bootstrap `.mcp.json`, `.gitignore`, optional initial index |
+| `dowse hook` | Opt-in Cursor `sessionStart` auto-index (`install`, `session-start`) |
 | `dowse serve` | MCP stdio server exposing the same logic to coding harnesses |
 
 ## Layout
@@ -32,6 +36,7 @@ dowse/
   embed.py        # sentence-transformers wrapper (lazy-loaded)
   store.py        # zvec schema, idempotent sync_file(), hybrid query
   service.py      # run_index() / run_query() — single implementation
+  cursor_hooks.py # opt-in Cursor sessionStart hook install + session-start runner
   cli.py          # Typer CLI (thin wrapper over service)
   server.py       # MCP server (thin wrapper over service)
 tests/
@@ -63,9 +68,13 @@ pip install -e ".[dev]"
 | Task | Command |
 |------|---------|
 | Run tests | `pytest -q` |
-| Index a tree | `dowse index .\path\to\repo --db .\.dowse_index` |
-| Query | `dowse query "how does auth work" --db .\.dowse_index` |
-| MCP server | `pip install "dowse[mcp]"` then `dowse serve --db .\.dowse_index` |
+| Bootstrap repo | `dowse init ./path/to/repo` (add `--harness pi` for Pi preset) |
+| Index a tree | `dowse index ./path/to/repo --db ./.dowse_index` |
+| Query | `dowse query "how does auth work" --db ./.dowse_index` |
+| Index health | `dowse status --root ./path/to/repo` |
+| Setup diagnostics | `dowse doctor --root ./path/to/repo` |
+| Cursor session hook | `dowse hook install` (once per machine; requires `dowse` on PATH) |
+| MCP server | `pip install "dowse[mcp]"` then `dowse serve --db ./.dowse_index` |
 
 CI runs on **Windows** (`windows-latest`, Python 3.12) for every PR to `main`. Keep tests portable — no hardcoded absolute paths, no embedding model download in tests.
 
