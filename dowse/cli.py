@@ -252,7 +252,9 @@ def serve(
         try:
             from .server import build_server
         except ModuleNotFoundError as exc:  # mcp not installed
-            _err(f"[serve] missing dependency: {exc}. Install with: pip install 'dowse[mcp]'")
+            from ._dist import pip_extra_hint
+
+            _err(f"[serve] missing dependency: {exc}. Install with: {pip_extra_hint('mcp')}")
             raise typer.Exit(code=1) from None
         _err(f"[serve] starting MCP stdio server (default db={db}, model={model})")
         mcp = build_server(default_db=str(db), default_model=model)

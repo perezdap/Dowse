@@ -137,7 +137,7 @@ def test_index_logs_missing_grammar(tmp_path: Path, db_path: Path, monkeypatch) 
     assert skip_lines, f"expected a skip log for .go, got: {logs}"
     # Counts both .go files and points at the install extra.
     assert "2" in skip_lines[0]
-    assert "dowse[go]" in skip_lines[0]
+    assert "dowse-context[go]" in skip_lines[0]
 
 
 def test_scan_language_coverage_contract(tmp_path: Path, monkeypatch) -> None:
@@ -166,7 +166,7 @@ def test_scan_language_coverage_contract(tmp_path: Path, monkeypatch) -> None:
     assert cov["go"].installed is False
     assert cov["go"].file_count == 3
     assert cov["go"].extra == "go"
-    assert cov["go"].install_hint == 'pip install "dowse[go]"'
+    assert cov["go"].install_hint == 'pip install "dowse-context[go]"'
 
 
 def test_index_coverage_skipped_without_log(tmp_path: Path, db_path: Path, monkeypatch) -> None:

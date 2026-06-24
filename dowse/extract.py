@@ -173,7 +173,9 @@ class LangCoverage:
         """`pip install` hint, or None when already installed / a core dep."""
         if self.installed or self.extra is None:
             return None
-        return f'pip install "dowse[{self.extra}]"'
+        from ._dist import pip_extra_hint
+
+        return pip_extra_hint(self.extra)
 
 
 def scan_language_coverage(

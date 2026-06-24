@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- PyPI distribution renamed to **`dowse-context`** (import package and CLI command
+  remain **`dowse`**). Production name **`dowse`** is owned by another project on PyPI.
+
 ## [0.2.0] - 2026-06-24
 
 ### Added

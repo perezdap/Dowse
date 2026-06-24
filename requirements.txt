@@ -17,7 +17,7 @@ tree-sitter-powershell>=0.26    # function/filter/class + methods (.ps1, .psm1)
 tree-sitter-c-sharp>=0.23       # class/interface/struct/record + methods (.cs)
 
 # Optional: MCP server for `dowse serve` (use the official SDK, not standalone fastmcp).
-# pip install "dowse[mcp]"   or   pip install "mcp>=1.27"
+# pip install "dowse-context[mcp]"   or   pip install "mcp>=1.27"
 # mcp>=1.27
 
 # Optional extra grammars — uncomment the languages you actually index.

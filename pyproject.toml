@@ -1,5 +1,5 @@
 [project]
-name = "dowse"
+name = "dowse-context"
 version = "0.2.0"
 description = "Fluff-free local code Context Engine: tree-sitter extraction + zvec hybrid retrieval."
 readme = "README.md"
