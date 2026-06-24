@@ -8,6 +8,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- Release workflow (`.github/workflows/release.yml`) — builds wheel + sdist with
+  `python -m build`, validates with `twine check dist/*`, publishes to TestPyPI
+  then PyPI via **PyPI Trusted Publishing** (OIDC, no API tokens). Triggers on
+  `v*` tag pushes only; never on ordinary PRs. See `RELEASE.md` for setup.
 - `dowse init` — one-command project bootstrap: writes or merges `.mcp.json`
   with a `dowse` server entry, adds `.dowse_index/` to `.gitignore`
   idempotently, reports missing grammar coverage, and runs an initial index.
