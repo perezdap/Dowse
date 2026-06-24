@@ -12,6 +12,8 @@ symbols, sentence-transformers embeds them, zvec stores vectors, and a hybrid
 progress goes to stderr. Windows-first; CPython 3.12; runs fully offline after
 the first model download (~80 MB MiniLM).
 
+**CLI-only from PyPI (no MCP/dev):** load skill **`dowse-cli`** instead of this one.
+
 ## Quick start (PowerShell)
 
 **End users (global CLI):** `pipx install "dowse-context[mcp]"` or `uv tool install "dowse-context[mcp]"` so
