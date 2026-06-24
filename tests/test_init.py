@@ -61,6 +61,66 @@ def test_init_mcp_json_idempotent_on_rerun(tmp_path: Path) -> None:
     assert len(dowse_entries) == 1
 
 
+def test_init_pi_harness_writes_adapter_config(tmp_path: Path) -> None:
+    """run_init can write a Pi-compatible pi-mcp-adapter server entry."""
+    result = service.run_init(
+        root=tmp_path,
+        db=tmp_path / ".dowse_index",
+        skip_index=True,
+        harness="pi",
+    )
+
+    data = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    entry = data["mcpServers"]["dowse"]
+    assert entry == {
+        "command": "dowse",
+        "args": ["serve", "--db", ".dowse_index"],
+        "directTools": True,
+    }
+    assert result["harness"]["name"] == "pi"
+    assert result["harness"]["config_path"] == ".mcp.json"
+
+
+def test_init_pi_harness_reports_missing_requirements(tmp_path: Path, monkeypatch) -> None:
+    """Pi preset reports actionable guidance when Pi or pi-mcp-adapter are absent."""
+    monkeypatch.setattr(service.shutil, "which", lambda _cmd: None)
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path / "empty-pi-agent"))
+
+    result = service.run_init(
+        root=tmp_path,
+        db=tmp_path / ".dowse_index",
+        skip_index=True,
+        harness="pi",
+    )
+
+    requirements = result["harness"]["requirements"]
+    assert requirements["pi"]["installed"] is False
+    assert requirements["pi_mcp_adapter"]["installed"] is False
+    assert requirements["pi"]["install_hint"] == "npm install -g @earendil-works/pi-coding-agent"
+    assert requirements["pi_mcp_adapter"]["install_hint"] == "pi install npm:pi-mcp-adapter"
+    assert any("pi-mcp-adapter" in note for note in result["harness"]["guidance"])
+
+
+def test_init_pi_harness_detects_present_requirements(tmp_path: Path, monkeypatch) -> None:
+    """Pi preset reports Pi and pi-mcp-adapter as installed when found."""
+    pi_agent_dir = tmp_path / "pi-agent"
+    (pi_agent_dir / "npm" / "node_modules" / "pi-mcp-adapter").mkdir(parents=True)
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(pi_agent_dir))
+    monkeypatch.setattr(service.shutil, "which", lambda _cmd: "C:/tools/pi.cmd")
+
+    result = service.run_init(
+        root=tmp_path,
+        db=tmp_path / ".dowse_index",
+        skip_index=True,
+        harness="pi",
+    )
+
+    requirements = result["harness"]["requirements"]
+    assert requirements["pi"]["installed"] is True
+    assert requirements["pi"]["executable"] == "C:/tools/pi.cmd"
+    assert requirements["pi_mcp_adapter"]["installed"] is True
+
+
 # ---------------------------------------------------------------------------
 # .gitignore (#16)
 # ---------------------------------------------------------------------------
@@ -141,3 +201,28 @@ def test_cli_init_emits_json(sample_repo: Path, db_path: Path) -> None:
     out = json.loads(r.stdout)
     assert out["status"] == "ok"
     assert out["index"]["status"] == "ok"
+
+
+def test_cli_init_accepts_pi_harness(tmp_path: Path) -> None:
+    """dowse init --harness pi exposes the Pi preset through the CLI."""
+    r = runner.invoke(
+        cli.app,
+        ["init", str(tmp_path), "--skip-index", "--harness", "pi"],
+    )
+    assert r.exit_code == 0, r.stdout + r.stderr
+    out = json.loads(r.stdout)
+    assert out["harness"]["name"] == "pi"
+    data = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert data["mcpServers"]["dowse"]["directTools"] is True
+
+
+def test_cli_init_rejects_unknown_harness_without_traceback(tmp_path: Path) -> None:
+    """Unknown init harness values fail at argument parsing without a traceback."""
+    r = runner.invoke(
+        cli.app,
+        ["init", str(tmp_path), "--skip-index", "--harness", "nope"],
+    )
+    assert r.exit_code == 2
+    output = r.stdout + r.stderr
+    assert "Invalid value" in output
+    assert "Traceback" not in output

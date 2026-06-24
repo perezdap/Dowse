@@ -8,7 +8,9 @@ how to present it.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -390,6 +392,71 @@ def run_doctor(
 # ---------------------------------------------------------------------------
 
 _DOWSE_MCP_KEY = "dowse"
+_HARNESS_CONFIGS = {
+    "pi": {
+        "config_path": ".mcp.json",
+        "mcp_entry_overrides": {"directTools": True},
+    }
+}
+
+
+def _pi_agent_dir() -> Path:
+    configured = os.environ.get("PI_CODING_AGENT_DIR")
+    if configured:
+        return Path(configured)
+    return Path.home() / ".pi" / "agent"
+
+
+def _pi_package_installed(root: Path, package_name: str) -> bool:
+    package_parts = package_name.split("/")
+    candidates = [
+        _pi_agent_dir() / "npm" / "node_modules" / Path(*package_parts),
+        root / ".pi" / "npm" / "node_modules" / Path(*package_parts),
+    ]
+    return any(path.exists() for path in candidates)
+
+
+def _pi_requirements(root: Path) -> dict:
+    pi_exe = shutil.which("pi")
+    adapter_installed = _pi_package_installed(root, "pi-mcp-adapter")
+    return {
+        "pi": {
+            "installed": pi_exe is not None,
+            "executable": pi_exe,
+            "install_hint": "npm install -g @earendil-works/pi-coding-agent",
+        },
+        "pi_mcp_adapter": {
+            "installed": adapter_installed,
+            "install_hint": "pi install npm:pi-mcp-adapter",
+        },
+    }
+
+
+def _pi_guidance(requirements: dict) -> list[str]:
+    guidance = [
+        "Pi core does not include MCP; Dowse's Pi preset expects npm:pi-mcp-adapter."
+    ]
+    if not requirements["pi"]["installed"]:
+        guidance.append(
+            "Install Pi first: npm install -g @earendil-works/pi-coding-agent"
+        )
+    if not requirements["pi_mcp_adapter"]["installed"]:
+        guidance.append("Install the adapter: pi install npm:pi-mcp-adapter")
+    return guidance
+
+
+def _harness_result(root: Path, harness: str | None) -> dict | None:
+    if not harness:
+        return None
+    if harness == "pi":
+        requirements = _pi_requirements(root)
+        return {
+            "name": harness,
+            "config_path": _HARNESS_CONFIGS[harness]["config_path"],
+            "requirements": requirements,
+            "guidance": _pi_guidance(requirements),
+        }
+    raise ValueError(f"unsupported harness: {harness}")
 
 
 def _relative_db_path(root: Path, db: Path) -> str:
@@ -400,16 +467,23 @@ def _relative_db_path(root: Path, db: Path) -> str:
         return str(db)
 
 
-def _merge_mcp_config(root: Path, db_rel: str) -> dict:
+def _dowse_mcp_entry(db_rel: str, harness: str | None = None) -> dict:
+    entry = {
+        "command": "dowse",
+        "args": ["serve", "--db", db_rel],
+    }
+    if harness:
+        entry.update(_HARNESS_CONFIGS[harness]["mcp_entry_overrides"])
+    return entry
+
+
+def _merge_mcp_config(root: Path, db_rel: str, harness: str | None = None) -> dict:
     """Create or merge .mcp.json with a dowse server entry.
 
     Returns ``{"created": bool, "merged": bool}`` describing what happened.
     """
     mcp_path = root / ".mcp.json"
-    dowse_entry = {
-        "command": "dowse",
-        "args": ["serve", "--db", db_rel],
-    }
+    dowse_entry = _dowse_mcp_entry(db_rel, harness)
 
     if not mcp_path.exists():
         data = {"mcpServers": {_DOWSE_MCP_KEY: dowse_entry}}
@@ -462,6 +536,7 @@ def run_init(
     db: str | Path | None = None,
     model: str = DEFAULT_MODEL,
     skip_index: bool = False,
+    harness: str | None = None,
     log: Callable[[str], None] | None = None,
 ) -> dict:
     """One-command project bootstrap: MCP config, gitignore, coverage, index.
@@ -478,9 +553,11 @@ def run_init(
     root_path = Path(root).resolve()
     db_path = Path(db).resolve() if db else root_path / ".dowse_index"
     db_rel = _relative_db_path(root_path, db_path)
+    if harness and harness not in _HARNESS_CONFIGS:
+        raise ValueError(f"unsupported harness: {harness}")
 
     _log("[init] configuring .mcp.json ...")
-    mcp_result = _merge_mcp_config(root_path, db_rel)
+    mcp_result = _merge_mcp_config(root_path, db_rel, harness)
 
     _log("[init] updating .gitignore ...")
     _merge_gitignore(root_path)
@@ -501,6 +578,7 @@ def run_init(
         "status": "ok",
         "workspace": {"root": str(root_path), "db_path": str(db_path)},
         "mcp_config": mcp_result,
+        "harness": _harness_result(root_path, harness),
         "gitignore": {"path": str(root_path / ".gitignore")},
         "missing_grammars": missing,
         "index": index_summary,

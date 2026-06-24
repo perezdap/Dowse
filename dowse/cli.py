@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -26,6 +27,10 @@ from .server_lock import ServerLockHeld, acquire_server_lock
 from .store import LockedIndexError, Store
 
 app = typer.Typer(add_completion=False, help="Local code Context Engine (tree-sitter + zvec).")
+
+
+class InitHarness(str, Enum):
+    PI = "pi"
 
 
 def _err(msg: str) -> None:
@@ -179,13 +184,22 @@ def init(
         False, "--skip-index",
         help="Write MCP config and gitignore but do not run an initial index.",
     ),
+    harness: Optional[InitHarness] = typer.Option(
+        None, "--harness",
+        help="Harness-specific config preset to generate (currently: pi).",
+    ),
 ):
     """One-command bootstrap: MCP config, .gitignore, grammar coverage, index."""
     root_path = Path(path).resolve()
     db_path = Path(db).resolve() if db else root_path / ".dowse_index"
     try:
         payload = service.run_init(
-            root=root_path, db=db_path, model=model, skip_index=skip_index, log=_err,
+            root=root_path,
+            db=db_path,
+            model=model,
+            skip_index=skip_index,
+            harness=harness.value if harness else None,
+            log=_err,
         )
     except LockedIndexError as exc:
         _locked_index_exit(exc)
