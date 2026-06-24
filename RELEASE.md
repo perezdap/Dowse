@@ -64,9 +64,8 @@ approve before production publishes.
 ## Release rehearsal (without PyPI)
 
 To rehearse without publishing to production, push a pre-release tag
-(e.g. `v0.2.0-rc1`). The workflow still publishes to TestPyPI, and the PyPI
-job runs after — if you only want TestPyPI, cancel the `publish-pypi` job
-manually or add a condition to skip it for pre-release tags.
+(e.g. `v0.2.0-rc1`). The workflow publishes to TestPyPI; the **PyPI** job is
+skipped automatically when the tag name contains `-rc`.
 
 ## Verifying the published package
 
@@ -88,6 +87,7 @@ dowse status
 - The workflow **does not trigger on pull requests** — only on `v*` tag pushes.
 - `skip-existing: true` on both publish jobs means re-running a tag won't fail
   if the version already exists on PyPI/TestPyPI.
-- The workflow runs on `windows-latest` to match the project's Windows-first CI.
+- **Build** runs on `windows-latest` (matches CI). **Publish** jobs run on
+  `ubuntu-latest` because `pypa/gh-action-pypi-publish` requires GNU/Linux.
 - No API tokens are used anywhere. All authentication is via OIDC Trusted
   Publishing.

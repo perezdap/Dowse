@@ -42,7 +42,7 @@ jobs:
   publish-testpypi:
     name: Publish to TestPyPI
     needs: build
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     environment: testpypi
     permissions:
       id-token: write
@@ -62,7 +62,9 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     needs: publish-testpypi
-    runs-on: windows-latest
+    # Rehearsal tags (e.g. v0.2.0-rc1) stop after TestPyPI.
+    if: ${{ !contains(github.ref_name, '-rc') }}
+    runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write

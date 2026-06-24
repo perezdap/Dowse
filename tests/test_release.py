@@ -56,7 +56,18 @@ def test_release_workflow_has_testpypi_environment() -> None:
 def test_release_workflow_gates_pypi_on_testpypi_success() -> None:
     """The real PyPI publish job must depend on the TestPyPI job."""
     content = WORKFLOW.read_text(encoding="utf-8")
-    # There should be two publish targets, with pypi coming after testpypi.
     assert "testpypi" in content.lower()
     assert "pypi" in content.lower()
     assert "needs:" in content
+    assert "publish-pypi" in content
+    assert "needs: publish-testpypi" in content or "needs:\n      - publish-testpypi" in content
+
+
+def test_release_workflow_publish_jobs_use_linux() -> None:
+    """gh-action-pypi-publish requires GNU/Linux (Trusted Publishing)."""
+    content = WORKFLOW.read_text(encoding="utf-8")
+    assert "publish-testpypi" in content
+    idx = content.index("publish-testpypi")
+    publish_section = content[idx : idx + 900]
+    assert "ubuntu-latest" in publish_section
+    assert "windows-latest" not in publish_section.split("publish-pypi")[0]
