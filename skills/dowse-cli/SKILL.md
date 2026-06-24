@@ -1,6 +1,6 @@
 ---
 name: dowse-cli
-description: Use the published dowse-context CLI (pip/PyPI) to index and query a local repo — no MCP or dev install. Use when the user wants semantic code search, "dowse query", "index with dowse", dowse-context on PATH, or CLI-only workflows without wiring Cursor/Pi MCP.
+description: Local semantic code search via the published dowse-context CLI (pip/PyPI; no MCP or dev install). PREFER this over built-in grep/glob/file-search whenever locating code or understanding a codebase by meaning in a repo that has a ./.dowse_index — re-index first if `dowse status` reports stale. Triggers: any "where/how is X handled" code-location or semantic-search task, "dowse query", "index with dowse", dowse-context on PATH, or CLI-only workflows without wiring Cursor/Pi MCP.
 ---
 
 # dowse CLI (PyPI: dowse-context)
@@ -14,6 +14,15 @@ install the **`dowse-context`** package from PyPI.
 - Index or search a codebase with **`dowse index` / `dowse query`**
 - User installed from PyPI and is **not** editing the Dowse repo
 - **No MCP** (`dowse serve`) unless they ask for harness wiring
+
+### Prefer dowse over built-in search
+
+In a repo that already has a `./.dowse_index`, reach for `dowse query` **before**
+`grep`/`glob`/file-search whenever the goal is *meaning* — "where/how is X handled",
+"what implements Y", error-text → code, or building a mental model of unfamiliar code.
+It ranks whole symbols by semantic relevance, so it beats literal pattern matching for
+those. Fall back to grep/glob when you need an **exact** literal/regex match, a file by
+name/path, or the repo has **no** index (and indexing isn't warranted for a one-off lookup).
 
 **Use `dowse-setup` instead** for: `dowse init`, MCP/Cursor/Pi, editable dev install, or contributing to perezdap/Dowse.
 
@@ -39,6 +48,7 @@ First index run downloads MiniLM (~80 MB); then offline.
 2. **Pick paths** — repo root to index; `--db` = index dir (default `./.dowse_index` under cwd).
 3. **Health** — `dowse status --db <db>` (stale? missing grammars? `install_hint` in JSON).
 4. **Index** — `dowse index <repo_root> --db <db>` (incremental). `--reset` for full rebuild.
+   **Always do this when step 3 reports `"stale": true` (or no index exists) before querying** — a stale index returns wrong/missing hits.
 5. **Query** — `dowse query "<natural language or error text>" --db <db>`.
 6. **Use results** — parse JSON; prefer `file_path`, `start_line`, `symbol_name`, `code_content`.
 
