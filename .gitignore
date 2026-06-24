@@ -16,6 +16,8 @@ htmlcov/
 # Local virtualenvs and index artefacts
 .venv/
 venv/
+.rehearsal-venv/
+.testpypi-venv/
 .dowse_index/
 *.serve.lock
 

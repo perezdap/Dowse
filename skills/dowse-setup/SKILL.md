@@ -14,7 +14,7 @@ the first model download (~80 MB MiniLM).
 
 ## Quick start (PowerShell)
 
-**End users (global CLI):** `pipx install "dowse[mcp]"` or `uv tool install "dowse[mcp]"` so
+**End users (global CLI):** `pipx install "dowse-context[mcp]"` or `uv tool install "dowse-context[mcp]"` so
 `dowse` is on PATH for MCP and Cursor hooks.
 
 **Developers (this repo):**
@@ -38,11 +38,11 @@ Optional Cursor session freshness (once per machine): `dowse hook install` or
 1. Confirm CPython 3.10+ (3.12 verified). zvec ships prebuilt Windows x64
    wheels — no compiler.
 2. Create + activate venv.
-3. `pip install -e ".[dev]"` for the repo, or `pip install dowse` for end use.
+3. `pip install -e ".[dev]"` for the repo, or `pip install dowse-context` for end use.
 4. Optional language extras (only if the target repo uses them):
-   `pip install "dowse[all-langs]"` — or pick: `[go]`, `[rust]`, `[bash]`,
+   `pip install "dowse-context[all-langs]"` — or pick: `[go]`, `[rust]`, `[bash]`,
    `[javascript]`, `[typescript]`.
-5. Optional MCP extra: `pip install "dowse[mcp]"` — only if wiring `dowse serve`.
+5. Optional MCP extra: `pip install "dowse-context[mcp]"` — only if wiring `dowse serve`.
 6. Verify: `dowse --help` and `pytest -q`.
 
 **Do NOT install `tree-sitter-language-pack`** — it fetches grammars at
@@ -71,7 +71,7 @@ idempotent (no duplicates, no clobbered MCP servers).
 - `.dowse_index` is a zvec collection directory (DB files, not a single file).
   It's in `.gitignore` — don't commit it.
 - Missing grammars are skipped with a report like
-  `skipped 12 .go files (go) - pip install "dowse[go]"` — never silent.
+  `skipped 12 .go files (go) - pip install "dowse-context[go]"` — never silent.
 - First run downloads MiniLM once; subsequent runs are offline.
 
 ### 3. Query
@@ -94,7 +94,7 @@ dowse query "retry with backoff" --db ./.dowse_index | jq -r '.results[] | "\(.f
 ### 4. MCP server (for coding harnesses)
 
 ```powershell
-pip install "dowse[mcp]"
+pip install "dowse-context[mcp]"
 dowse serve --db ./.dowse_index
 ```
 

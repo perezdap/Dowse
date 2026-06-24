@@ -15,7 +15,7 @@ publisher. Set this up once on both PyPI and TestPyPI:
 
 1. Go to https://pypi.org/manage/account/publishing/
 2. Add a new pending publisher:
-   - **PyPI Project Name:** `dowse`
+   - **PyPI Project Name:** `dowse-context` (not `dowse` — that name is taken on PyPI)
    - **Owner:** `perezdap`
    - **Repository:** `Dowse`
    - **Workflow filename:** `release.yml`
@@ -27,6 +27,7 @@ publisher. Set this up once on both PyPI and TestPyPI:
 
 1. Go to https://test.pypi.org/manage/account/publishing/
 2. Add a new pending publisher with the same settings, except:
+   - **PyPI Project Name:** `dowse-context`
    - **Environment name:** `testpypi`
 3. Save.
 
@@ -58,8 +59,8 @@ approve before production publishes.
    - **publish-testpypi** — publishes to TestPyPI (rehearsal)
    - **publish-pypi** — publishes to PyPI after TestPyPI succeeds
 
-5. Verify on TestPyPI first: https://test.pypi.org/project/dowse/
-6. Verify on PyPI: https://pypi.org/project/dowse/
+5. Verify on TestPyPI first: https://test.pypi.org/project/dowse-context/
+6. Verify on PyPI: https://pypi.org/project/dowse-context/
 
 ## Release rehearsal (without PyPI)
 
@@ -74,7 +75,7 @@ skipped automatically when the tag name contains `-rc`.
 pip install -i https://test.pypi.org/simple/ dowse
 
 # Install from PyPI (production)
-pip install dowse
+pip install dowse-context
 
 # Verify the entry points work
 dowse --help

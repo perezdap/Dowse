@@ -58,10 +58,10 @@ dowse query "silent uninstall command" --db .\.dowse_index --lang yaml --kind se
 
 ## Troubleshooting
 
-### `skipped N .go files (go) - pip install "dowse[go]"`
+### `skipped N .go files (go) - pip install "dowse-context[go]"`
 
 Not an error — the grammar wheel for that language isn't installed. Either
-install the extra (`pip install "dowse[go]"`) or accept that those files are
+install the extra (`pip install "dowse-context[go]"`) or accept that those files are
 excluded from the index. Missing grammars never crash the run.
 
 ### First `index`/`query` is slow / seems to hang
@@ -135,7 +135,7 @@ genuinely changed, its symbols will update. If you see no change:
 
 ### `dowse serve` tools don't appear in the harness
 
-- Confirm `pip install "dowse[mcp]"` succeeded (adds the official `mcp` SDK).
+- Confirm `pip install "dowse-context[mcp]"` succeeded (adds the official `mcp` SDK).
 - Confirm the harness config points at the `dowse` executable on PATH (or use
   the full path: `C:\path\to\.venv\Scripts\dowse.exe`).
 - Confirm the `--db` path exists and was indexed. `query_context` against an

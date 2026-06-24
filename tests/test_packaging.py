@@ -21,12 +21,17 @@ def test_pyproject_includes_release_metadata() -> None:
     assert 'Programming Language :: Python :: 3.12' in pyproject
 
 
+def test_pyproject_distribution_name_is_dowse_context() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'name = "dowse-context"' in pyproject
+
+
 def test_readme_separates_user_and_development_installs() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "### End-user install" in readme
     assert "### Development" in readme
-    assert "pip install dowse" in readme
+    assert "pip install dowse-context" in readme
     assert 'pip install -e ".[dev]"' in readme
 
 
@@ -52,9 +57,9 @@ def test_readme_documents_global_install_with_pipx_and_uv() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "pipx install" in readme
-    assert 'pipx install "dowse[mcp,all-langs]"' in readme
+    assert 'pipx install "dowse-context[mcp,all-langs]"' in readme
     assert "uv tool install" in readme
-    assert 'uv tool install "dowse[mcp,all-langs]"' in readme
+    assert 'uv tool install "dowse-context[mcp,all-langs]"' in readme
 
 
 def test_readme_documents_core_vs_optional_languages_near_install() -> None:

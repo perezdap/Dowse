@@ -74,7 +74,7 @@ pip install -e ".[dev]"
 | Index health | `dowse status --root ./path/to/repo` |
 | Setup diagnostics | `dowse doctor --root ./path/to/repo` |
 | Cursor session hook | `dowse hook install` (once per machine; requires `dowse` on PATH) |
-| MCP server | `pip install "dowse[mcp]"` then `dowse serve --db ./.dowse_index` |
+| MCP server | `pip install "dowse-context[mcp]"` then `dowse serve --db ./.dowse_index` |
 
 CI runs on **Windows** (`windows-latest`, Python 3.12) for every PR to `main`. Keep tests portable — no hardcoded absolute paths, no embedding model download in tests.
 

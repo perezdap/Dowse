@@ -17,34 +17,34 @@ dowse/
   cli.py          # Typer CLI: `index`, `query`, `status`, `doctor`, `init`, `hook`, `serve`
   server.py       # MCP (FastMCP) stdio server wrapping the same logic
 requirements.txt
-pyproject.toml    # installs the `dowse` entrypoint; extras: [mcp], [go], ...
+pyproject.toml    # PyPI `dowse-context`; CLI entrypoint `dowse`; extras: [mcp], [go], ...
 ```
 
 ## Install
 
 ### End-user install
 
-Install `dowse` into an existing Python environment when you want to index or query code without a development checkout:
+Install the **`dowse-context`** package (PyPI name; CLI command **`dowse`**) into an existing Python environment when you want to index or query code without a development checkout:
 
 ```bash
-pip install dowse
-pip install "dowse[mcp]"           # add the MCP server dependencies
-pip install "dowse[mcp,all-langs]" # add MCP + every optional grammar
+pip install dowse-context
+pip install "dowse-context[mcp]"           # add the MCP server dependencies
+pip install "dowse-context[mcp,all-langs]" # add MCP + every optional grammar
 ```
 
 For a **global** `dowse` on your PATH (one install, any repo), use **pipx** or **uv tool** instead of a project venv:
 
 ```bash
-pipx install dowse
-pipx install "dowse[mcp]"
-pipx install "dowse[mcp,all-langs]"
+pipx install dowse-context
+pipx install "dowse-context[mcp]"
+pipx install "dowse-context[mcp,all-langs]"
 
-uv tool install dowse
-uv tool install "dowse[mcp]"
-uv tool install "dowse[mcp,all-langs]"
+uv tool install dowse-context
+uv tool install "dowse-context[mcp]"
+uv tool install "dowse-context[mcp,all-langs]"
 ```
 
-**Languages in the base install vs optional extras:** the default `dowse` package ships grammars for **Python**, **PowerShell**, and **C#** (see [Language support](#language-support) for extensions and wheels). **JavaScript**, **TypeScript**, **Go**, **Rust**, and **Bash** are optional — install per-language extras (`dowse[go]`, etc.) or the **`all-langs`** bundle. `dowse status` / `dowse init` report missing grammars with `pip install` hints when a repo uses files you have not installed yet.
+**Languages in the base install vs optional extras:** the default `dowse-context` install ships grammars for **Python**, **PowerShell**, and **C#** (see [Language support](#language-support) for extensions and wheels). **JavaScript**, **TypeScript**, **Go**, **Rust**, and **Bash** are optional — install per-language extras (`dowse-context[go]`, etc.) or the **`all-langs`** bundle. `dowse status` / `dowse init` report missing grammars with `pip install` hints when a repo uses files you have not installed yet.
 
 ### Development
 
@@ -118,7 +118,7 @@ dowse status --db ./.dowse_index             # exists only, no root to compare
   "last_indexed_at": 1781460324.23, "stale": false,
   "missing_grammars": [
     { "language": "go", "extensions": [".go"], "file_count": 12,
-      "install_hint": "pip install \"dowse[go]\"" }
+      "install_hint": "pip install \"dowse-context[go]\"" }
   ]
 }
 ```
@@ -175,7 +175,7 @@ Pi and `pi-mcp-adapter` appear installed and reports guidance — it does not ru
   "gitignore": {"path": "/path/to/my_project/.gitignore"},
   "missing_grammars": [
     {"language": "go", "extensions": [".go"], "file_count": 12,
-     "install_hint": "pip install \"dowse[go]\""}
+     "install_hint": "pip install \"dowse-context[go]\""}
   ],
   "index": {"status": "ok", "indexed_files": 42, "indexed_symbols": 311, "dimension": 384,
             "db": "/path/to/my_project/.dowse_index", "elapsed_seconds": 8.4}
@@ -254,7 +254,7 @@ Tuning knobs: `--top/-n`, `--candidates` (dense pool size before re-rank), `--w-
 The CLI is already harness-usable as-is: any agent that can run a shell command can call `dowse query "..."` and read the JSON. But for harnesses that speak MCP (Claude Code, Claude Desktop, Cursor, Copilot CLI), `dowse serve` exposes the same logic as three native tools over stdio:
 
 ```bash
-pip install "dowse[mcp]"   # adds the official mcp SDK
+pip install "dowse-context[mcp]"   # adds the official mcp SDK
 dowse serve --db ./.dowse_index          # speaks MCP on stdio
 ```
 
@@ -314,7 +314,7 @@ These extractors are pure-stdlib (no PyYAML, no Markdown parser, no MSBuild SDK)
 
 PowerShell needs no `name` field handling out of the box — the grammar puts identifiers in `function_name`/`simple_name` children, which the registry resolves via `name_child_types`.
 
-**Optional grammars** (install the extra; verified node names): JavaScript, TypeScript, Go, Rust, Bash. Install via the extras, e.g. `pip install dowse[go,rust]`, or grab them all with `pip install "dowse[all-langs]"`.
+**Optional grammars** (install the extra; verified node names): JavaScript, TypeScript, Go, Rust, Bash. Install via the extras, e.g. `pip install dowse-context-context[go,rust]`, or grab them all with `pip install "dowse-context[all-langs]"`.
 
 | Language   | Extensions   | Extra           | Wheel                    | Notes                                                       |
 |------------|--------------|-----------------|--------------------------|-------------------------------------------------------------|
@@ -324,7 +324,7 @@ PowerShell needs no `name` field handling out of the box — the grammar puts id
 | Rust       | `.rs`        | `rust`           | `tree-sitter-rust`       | fn/struct/enum/trait; trait methods qualified by trait      |
 | Bash       | `.sh` `.bash`| `bash`           | `tree-sitter-bash`       | `function_definition` (both `name()` and `function name` forms) |
 
-When a grammar is missing, `dowse index` reports it, e.g. `skipped 12 .go files (go) - pip install "dowse[go]"`, so polyglot repos never fail silently.
+When a grammar is missing, `dowse index` reports it, e.g. `skipped 12 .go files (go) - pip install "dowse-context[go]"`, so polyglot repos never fail silently.
 
 **Deliberately not auto-handled:** most declarative/data formats (Bicep, `.psd1`, arbitrary XML/JSON) don't have a function/class shape, so the symbol model doesn't fit them. The definition extractors above are explicit opt-ins for formats with a stable section shape; other formats should get similarly small custom extractors rather than being forced through a code grammar.
 

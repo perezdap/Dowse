@@ -59,7 +59,7 @@ def test_status_missing_grammars(sample_repo: Path, db_path: Path, monkeypatch) 
 
     assert "go" in missing
     assert missing["go"]["file_count"] == 2
-    assert missing["go"]["install_hint"] == 'pip install "dowse[go]"'
+    assert missing["go"]["install_hint"] == 'pip install "dowse-context[go]"'
     # Python is installed, so it must not be listed as missing.
     assert "python" not in missing
 

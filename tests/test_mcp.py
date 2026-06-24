@@ -1,6 +1,6 @@
 """MCP server tool registration and delegation (issue #9).
 
-The MCP SDK is an optional install (`pip install dowse[mcp]`), so every test
+The MCP SDK is an optional install (`pip install dowse-context-context[mcp]`), so every test
 uses `pytest.importorskip("mcp")` to skip cleanly where the SDK is absent. CI
 installs `.[dev,mcp]` so these tests run there instead of skipping.
 """
