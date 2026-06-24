@@ -32,6 +32,20 @@ pip install "dowse[mcp]"           # add the MCP server dependencies
 pip install "dowse[mcp,all-langs]" # add MCP + every optional grammar
 ```
 
+For a **global** `dowse` on your PATH (one install, any repo), use **pipx** or **uv tool** instead of a project venv:
+
+```bash
+pipx install dowse
+pipx install "dowse[mcp]"
+pipx install "dowse[mcp,all-langs]"
+
+uv tool install dowse
+uv tool install "dowse[mcp]"
+uv tool install "dowse[mcp,all-langs]"
+```
+
+**Languages in the base install vs optional extras:** the default `dowse` package ships grammars for **Python**, **PowerShell**, and **C#** (see [Language support](#language-support) for extensions and wheels). **JavaScript**, **TypeScript**, **Go**, **Rust**, and **Bash** are optional — install per-language extras (`dowse[go]`, etc.) or the **`all-langs`** bundle. `dowse status` / `dowse init` report missing grammars with `pip install` hints when a repo uses files you have not installed yet.
+
 ### Development
 
 Use an editable install when you are working on dowse itself:
@@ -276,7 +290,7 @@ dowse query "custom GenerateVersion build target" --db ./.dowse_index --kind sec
 
 These extractors are pure-stdlib (no PyYAML, no Markdown parser, no MSBuild SDK): they scan regular structure and use Python's built-in XML parser where useful, which is more forgiving of half-finished files than a strict project-system dependency. The flag is **opt-in** so a normal code index doesn't slurp every `README.md`, CI YAML, or project metadata file in the repo. The sections land in the same collection with `kind` set to `section` and `language` set to `yaml`, `markdown`, or `msbuild`, so you can filter them with `--lang msbuild` or `--kind section`. To add other declarative formats, drop an extractor into `definitions.py` and register its extension.
 
-
+## Language support
 
 `extract.py` has a small registry mapping extensions to a grammar loader and the node types that count as definitions. A language activates automatically if its grammar wheel is installed; uninstalled grammars are skipped rather than erroring.
 

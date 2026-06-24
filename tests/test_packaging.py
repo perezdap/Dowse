@@ -46,3 +46,23 @@ def test_readme_documents_pi_init_preset() -> None:
     assert "directTools" in readme
     assert "pi-mcp-adapter" in readme
     assert "Pi core does not include MCP" in readme
+
+
+def test_readme_documents_global_install_with_pipx_and_uv() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "pipx install" in readme
+    assert 'pipx install "dowse[mcp,all-langs]"' in readme
+    assert "uv tool install" in readme
+    assert 'uv tool install "dowse[mcp,all-langs]"' in readme
+
+
+def test_readme_documents_core_vs_optional_languages_near_install() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    install_section = readme.split("### Development", 1)[0]
+    assert "Python" in install_section
+    assert "PowerShell" in install_section
+    assert "C#" in install_section
+    assert "all-langs" in install_section
+    assert "optional" in install_section.lower() or "Optional" in install_section

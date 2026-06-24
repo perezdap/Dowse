@@ -8,6 +8,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- README documents global installs via **pipx** and **uv tool** (minimal, MCP, and
+  `all-langs` variants) and summarizes **core vs optional** language extras near
+  the end-user install section.
+- CI **wheel-smoke** job: build wheel, install into an isolated venv, run
+  `dowse --help`, `dowse serve --help`, and `dowse status` (issue #18).
 - Release workflow (`.github/workflows/release.yml`) — builds wheel + sdist with
   `python -m build`, validates with `twine check dist/*`, publishes to TestPyPI
   then PyPI via **PyPI Trusted Publishing** (OIDC, no API tokens). Triggers on
