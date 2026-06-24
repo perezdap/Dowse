@@ -6,6 +6,7 @@ Commands:
   status  report index health (exists, stale, missing grammars)
   doctor  install + index + lock + harness diagnostics as JSON
   init    one-command bootstrap: MCP config, gitignore, coverage, index
+  hook    install Cursor sessionStart auto-index (opt-in)
   serve   expose index/query as MCP tools over stdio for a coding harness
 
 Design rule: stdout carries ONLY machine-readable JSON. All human/progress
@@ -22,11 +23,14 @@ from typing import Optional
 import typer
 
 from .embed import DEFAULT_MODEL
+from . import cursor_hooks
 from . import service
 from .server_lock import ServerLockHeld, acquire_server_lock
 from .store import LockedIndexError, Store
 
 app = typer.Typer(add_completion=False, help="Local code Context Engine (tree-sitter + zvec).")
+hook_app = typer.Typer(help="Opt-in Cursor session hooks for incremental indexing.")
+app.add_typer(hook_app, name="hook")
 
 
 class InitHarness(str, Enum):
@@ -188,6 +192,14 @@ def init(
         None, "--harness",
         help="Harness-specific config preset to generate (currently: pi).",
     ),
+    auto_index: bool = typer.Option(
+        False,
+        "--auto-index",
+        help=(
+            "Also install a user-level Cursor sessionStart hook (opt-in). "
+            "Does not run without this flag. May contend with dowse serve/index locks."
+        ),
+    ),
 ):
     """One-command bootstrap: MCP config, .gitignore, grammar coverage, index."""
     root_path = Path(path).resolve()
@@ -199,11 +211,29 @@ def init(
             model=model,
             skip_index=skip_index,
             harness=harness.value if harness else None,
+            auto_index=auto_index,
             log=_err,
         )
     except LockedIndexError as exc:
         _locked_index_exit(exc)
     _emit(payload)
+
+
+@hook_app.command("install")
+def hook_install():
+    """Install or update ~/.cursor/hooks.json with dowse sessionStart auto-index."""
+    payload = cursor_hooks.run_hook_install()
+    _emit(payload)
+
+
+@hook_app.command("session-start")
+def hook_session_start():
+    """Cursor sessionStart target: incremental index when workspace opted in (fail-open)."""
+    payload = cursor_hooks.run_session_start_index(log=_err)
+    _emit(payload)
+    # Hooks must never block the editor session.
+    if payload.get("status") == "error":
+        raise typer.Exit(code=0)
 
 
 @app.command()

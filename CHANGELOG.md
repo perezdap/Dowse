@@ -8,6 +8,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Cursor session auto-index (opt-in, #4 / #19):** `dowse hook install` merges a
+  `sessionStart` entry into `~/.cursor/hooks.json` that runs `dowse hook
+  session-start`. On each Cursor session, that command incrementally indexes only
+  workspaces that already have `.dowse_index/` (or `.dowse.yaml`), and **fails open**
+  so hook errors never block the editor. `dowse init --auto-index` runs the same
+  installer once per machine; default `init` does not touch hooks.
 - README documents global installs via **pipx** and **uv tool** (minimal, MCP, and
   `all-langs` variants) and summarizes **core vs optional** language extras near
   the end-user install section.
