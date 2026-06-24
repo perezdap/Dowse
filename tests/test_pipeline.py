@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 import dowse.cli as cli
 import dowse.service as service
-from conftest import _symbol_names
+from conftest import _symbol_docs, _symbol_names
 from dowse.server_lock import acquire_server_lock
 from dowse.store import Store
 
@@ -245,6 +245,169 @@ def test_service_serializes_concurrent_queries_for_same_index(
     assert not t2.is_alive()
     assert errors == []
     assert len(results) == 2
+
+
+def test_existing_yaml_and_markdown_definition_sections_still_index(
+    sample_repo: Path, db_path: Path
+) -> None:
+    (sample_repo / "package.yaml").write_text(
+        'name: 7zip\n'
+        'install:\n'
+        '  command: setup.exe /S\n'
+        'uninstall:\n'
+        '  command: uninstall.exe /S\n'
+    )
+    (sample_repo / "definition.md").write_text(
+        '# Google Chrome\n'
+        '## Install\n'
+        '### Pre-Install\n'
+        'Stop running browser processes.\n'
+    )
+
+    r = runner.invoke(
+        cli.app,
+        ["index", str(sample_repo), "--db", str(db_path), "--reset", "--definitions"],
+    )
+    assert r.exit_code == 0, r.stdout + r.stderr
+
+    docs = _symbol_docs(db_path)
+    assert any(
+        d["language"] == "yaml"
+        and d["kind"] == "section"
+        and d["symbol_name"] == "7zip.install"
+        and "setup.exe /S" in d["code_content"]
+        for d in docs
+    )
+    assert any(
+        d["language"] == "markdown"
+        and d["kind"] == "section"
+        and d["symbol_name"] == "Google Chrome.Install.Pre-Install"
+        and "Stop running browser processes." in d["code_content"]
+        for d in docs
+    )
+
+
+def test_dotnet_project_files_are_indexed_as_definition_sections(
+    sample_repo: Path, db_path: Path
+) -> None:
+    (sample_repo / "src").mkdir()
+    (sample_repo / "src" / "App.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk">\n'
+        '  <PropertyGroup>\n'
+        '    <TargetFramework>net8.0</TargetFramework>\n'
+        '    <Nullable>enable</Nullable>\n'
+        '  </PropertyGroup>\n'
+        '  <ItemGroup>\n'
+        '    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />\n'
+        '    <ProjectReference Include="..\\Shared\\Shared.csproj" />\n'
+        '  </ItemGroup>\n'
+        '</Project>\n'
+    )
+
+    r = runner.invoke(
+        cli.app,
+        ["index", str(sample_repo), "--db", str(db_path), "--reset", "--definitions"],
+    )
+    assert r.exit_code == 0, r.stdout + r.stderr
+
+    docs = [d for d in _symbol_docs(db_path) if d["file_path"] == "src/App.csproj"]
+    assert {d["kind"] for d in docs} == {"section"}
+    assert {d["language"] for d in docs} == {"msbuild"}
+    assert any(d["symbol_name"] == "App.PropertyGroup.TargetFramework.Nullable" for d in docs)
+    assert any(
+        d["symbol_name"]
+        == "App.ItemGroup.PackageReference.Microsoft Extensions Logging.ProjectReference.Shared"
+        for d in docs
+    )
+
+    r = runner.invoke(
+        cli.app,
+        [
+            "query",
+            "logging package reference",
+            "--db",
+            str(db_path),
+            "--kind",
+            "section",
+            "--lang",
+            "msbuild",
+        ],
+    )
+    assert r.exit_code == 0, r.stdout + r.stderr
+    out = json.loads(r.stdout)
+    assert any(
+        '<PackageReference Include="Microsoft.Extensions.Logging"' in res["code_content"]
+        for res in out["results"]
+    )
+
+
+def test_msbuild_props_and_targets_are_indexed_as_definition_sections(
+    sample_repo: Path, db_path: Path
+) -> None:
+    (sample_repo / "Directory.Build.props").write_text(
+        '<Project>\n'
+        '  <PropertyGroup>\n'
+        '    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>\n'
+        '    <VersionPrefix>1.2.3</VersionPrefix>\n'
+        '  </PropertyGroup>\n'
+        '</Project>\n'
+    )
+    (sample_repo / "Custom.targets").write_text(
+        '<Project>\n'
+        '  <Target Name="GenerateVersion" BeforeTargets="BeforeBuild">\n'
+        '    <Message Importance="high" Text="Generating version" />\n'
+        '    <WriteLinesToFile File="$(IntermediateOutputPath)version.txt" Lines="$(VersionPrefix)" />\n'
+        '  </Target>\n'
+        '</Project>\n'
+    )
+
+    r = runner.invoke(
+        cli.app,
+        ["index", str(sample_repo), "--db", str(db_path), "--reset", "--definitions"],
+    )
+    assert r.exit_code == 0, r.stdout + r.stderr
+
+    docs = [d for d in _symbol_docs(db_path) if d["language"] == "msbuild"]
+    assert any(
+        d["file_path"] == "Directory.Build.props"
+        and d["symbol_name"]
+        == "Directory Build.PropertyGroup.ManagePackageVersionsCentrally.VersionPrefix"
+        for d in docs
+    )
+    assert any(
+        d["file_path"] == "Custom.targets"
+        and d["symbol_name"] == "Custom.Target.GenerateVersion.Message.WriteLinesToFile"
+        and "BeforeTargets=\"BeforeBuild\"" in d["code_content"]
+        for d in docs
+    )
+
+
+def test_malformed_msbuild_files_do_not_crash_and_emit_best_effort_sections(
+    sample_repo: Path, db_path: Path
+) -> None:
+    (sample_repo / "Broken.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk">\n'
+        '  <PropertyGroup>\n'
+        '    <TargetFramework>net8.0</TargetFramework>\n'
+        '  </PropertyGroup>\n'
+        '  <ItemGroup>\n'
+        '    <PackageReference Include="Serilog" Version="3.1.1" />\n'
+    )
+
+    r = runner.invoke(
+        cli.app,
+        ["index", str(sample_repo), "--db", str(db_path), "--reset", "--definitions"],
+    )
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert "Traceback" not in r.stderr
+
+    docs = [d for d in _symbol_docs(db_path) if d["file_path"] == "Broken.csproj"]
+    assert any(d["symbol_name"] == "Broken.PropertyGroup.TargetFramework" for d in docs)
+    assert any(
+        d["symbol_name"] == "Broken.ItemGroup.PackageReference.Serilog"
+        and '<PackageReference Include="Serilog"' in d["code_content"]
+        for d in docs
+    )
 
 
 def test_reindex_idempotent(sample_repo: Path, db_path: Path) -> None:

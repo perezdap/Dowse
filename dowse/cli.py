@@ -78,7 +78,7 @@ def index(
     batch: int = typer.Option(128, "--batch", help="Embedding batch size."),
     definitions: bool = typer.Option(
         False, "--definitions", "-D",
-        help="Also index PSADT YAML profiles and Markdown package definitions as sections.",
+        help="Also index YAML, Markdown, and .NET/MSBuild definition files as sections.",
     ),
 ):
     """Recursively index function/class definitions under PATH."""

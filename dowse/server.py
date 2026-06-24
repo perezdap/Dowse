@@ -44,7 +44,7 @@ def build_server(default_db: str = "./.dowse_index", default_model: str = DEFAUL
             query: Natural-language description or error message.
             top: Number of snippets to return (default 3).
             kind: Optional filter — "function", "class", or "section".
-            language: Optional filter — e.g. "python", "powershell", "csharp", "yaml".
+            language: Optional filter — e.g. "python", "powershell", "csharp", "yaml", "msbuild".
             filter: Optional raw zvec SQL filter, e.g. "file_path LIKE 'src/%'".
             db: Index path; defaults to the server's configured collection.
 
@@ -80,9 +80,9 @@ def build_server(default_db: str = "./.dowse_index", default_model: str = DEFAUL
         Args:
             path: Directory to index (recursively).
             reset: Rebuild the collection from scratch instead of reconciling.
-            definitions: Also index PSADT YAML profiles and Markdown package
-                definitions as sections (off by default to avoid pulling in
-                every README/CI file).
+            definitions: Also index YAML, Markdown, and .NET/MSBuild definition
+                files as sections (off by default to avoid pulling in every
+                README/CI file).
             db: Index path; defaults to the server's configured collection.
 
         Returns:
