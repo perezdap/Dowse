@@ -7,6 +7,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-25
+
+### Added
+- Safety guard for `dowse index` and non-`--skip-index` `dowse init`: refuse to
+  index the user's home directory or any ancestor of it by default, preventing
+  accidental whole-home indexing when run from the wrong working directory.
+
+### Changed
+- `dowse index` and `dowse init` now expose `--force` to override the home-root
+  safety guard when intentionally indexing a very broad tree.
+- `.mcp.json` is now ignored by default in `.gitignore`, avoiding accidental
+  commits of local harness wiring.
+
+### Tested
+- Added integration tests covering home-directory refusal, ancestor refusal,
+  `--force` override behavior, and the `init` pre-write refusal path.
+
+## [0.2.1] - 2026-06-24
+
 ### Changed
 - PyPI distribution renamed to **`dowse-context`** (import package and CLI command
   remain **`dowse`**). Production name **`dowse`** is owned by another project on PyPI.
