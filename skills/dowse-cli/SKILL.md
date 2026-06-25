@@ -1,6 +1,6 @@
 ---
 name: dowse-cli
-description: Local semantic code search via the published dowse-context CLI (pip/PyPI; no MCP or dev install). PREFER this over built-in grep/glob/file-search whenever locating code or understanding a codebase by meaning in a repo that has a ./.dowse_index — re-index first if `dowse status` reports stale. Triggers: any "where/how is X handled" code-location or semantic-search task, "dowse query", "index with dowse", dowse-context on PATH, or CLI-only workflows without wiring Cursor/Pi MCP.
+description: "Local semantic code search via the published dowse-context CLI (pip/PyPI; no MCP or dev install). PREFER this over built-in grep/glob/file-search whenever locating code or understanding a codebase by meaning in a repo that has a ./.dowse_index — re-index first if `dowse status` reports stale. Triggers: any 'where/how is X handled' code-location or semantic-search task, 'dowse query', 'index with dowse', dowse-context on PATH, or CLI-only workflows without wiring Cursor/Pi MCP."
 ---
 
 # dowse CLI (PyPI: dowse-context)
