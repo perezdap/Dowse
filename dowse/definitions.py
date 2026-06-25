@@ -300,3 +300,7 @@ DEFINITION_EXTRACTORS = {
 
 def definition_extensions() -> set[str]:
     return set(DEFINITION_EXTRACTORS)
+
+
+def definition_languages() -> frozenset[str]:
+    return frozenset({"yaml", "markdown", "msbuild"})

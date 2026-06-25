@@ -1,7 +1,10 @@
 """Packaging metadata and install docs for release readiness (issue #13)."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
+
+import dowse
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,6 +29,14 @@ def test_pyproject_distribution_name_is_dowse_context() -> None:
     assert 'name = "dowse-context"' in pyproject
 
 
+def test_import_package_version_matches_project_version() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^version = "([^"]+)"$', pyproject, re.MULTILINE)
+
+    assert match is not None
+    assert dowse.__version__ == match.group(1)
+
+
 def test_readme_separates_user_and_development_installs() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -42,6 +53,13 @@ def test_readme_documents_query_token_savings_report() -> None:
     assert '"token_savings"' in readme
     assert "regex-v1" in readme
     assert "full files containing the returned snippets" in readme
+
+
+def test_readme_documents_large_index_cleanup_boundary() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert ">100k-symbol" in readme
+    assert "--reset" in readme
 
 
 def test_readme_documents_pi_init_preset() -> None:
@@ -71,3 +89,22 @@ def test_readme_documents_core_vs_optional_languages_near_install() -> None:
     assert "C#" in install_section
     assert "all-langs" in install_section
     assert "optional" in install_section.lower() or "Optional" in install_section
+
+
+def test_security_and_local_offline_notes_are_documented() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    security = ROOT / "SECURITY.md"
+
+    assert "## Local/offline behavior" in readme
+    assert security.is_file()
+    assert "MCP" in security.read_text(encoding="utf-8")
+
+
+def test_docs_do_not_repeat_distribution_name() -> None:
+    checked = [
+        ROOT / "README.md",
+        ROOT / "tests" / "test_mcp.py",
+    ]
+
+    for path in checked:
+        assert "dowse-context-context" not in path.read_text(encoding="utf-8")

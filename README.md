@@ -82,13 +82,15 @@ A couple of zvec specifics worth knowing, since they're easy to get wrong:
 
 ## The indexing loop
 
-`dowse index` walks the directory (skipping `.git`, `node_modules`, `__pycache__`, virtualenvs, build dirs — but only *below* the root, so a project living under a path like `.../build/...` still indexes), and for each supported file:
+`dowse index` walks the directory (skipping `.git`, `.dowse_index`, `node_modules`, `__pycache__`, virtualenvs, build dirs — but only *below* the root, so a project living under a path like `.../build/...` still indexes), and for each supported file:
 
 1. Parse once with tree-sitter; collect every `function_definition` / `class_definition` node. Names are qualified by walking enclosing definitions (so a method reads as `Class.method`).
 2. Embed each symbol as `"{kind} {qualified_name}\n{body}"` (body capped at ~2k chars).
 3. Reconcile the file in zvec **idempotently**.
 
 The reconcile step is deliberate. zvec's `insert` ignores ids that already exist, and re-inserting a *deleted* id is tombstoned — so a naive "delete then re-insert" loses data. Instead each document id is `sha1(file_path::symbol_name::kind)` (stable across line moves), and per file the tool `upsert`s the current symbols, then deletes only the ids that have disappeared. Result: re-running `index` on an unchanged tree is a no-op; editing a file updates changed symbols, adds new ones, and removes deleted ones — without ever duplicating rows. After all files, one `optimize()` builds the vector index.
+
+For typical codebases, orphan cleanup enumerates the indexed file set and removes documents for source files that disappeared from disk. Very large >100k-symbol indexes are bounded by zvec query enumeration limits, so exact orphan cleanup can become best-effort there; use `dowse index --reset` for a clean rebuild when exact cleanup matters at that scale.
 
 ```bash
 dowse index ./my_project --db ./.dowse_index          # incremental, idempotent
@@ -281,6 +283,10 @@ Register it with a harness by pointing at the command. For Claude Code / Claude 
 
 This deliberately uses the FastMCP class bundled with the official `mcp` SDK rather than the standalone `fastmcp` package — the latter's v3 line rebuilt its architecture and auth model in early 2026, and for a local two-tool stdio server the bundled one is the stable, lower-churn choice.
 
+## Local/offline behavior
+
+Dowse scans only the workspace path you pass to `index`/`init`/`index_codebase`, stores extracted symbol snippets in the local zvec collection you choose, and uses a local `sentence-transformers` model for embeddings. The first real index/query may download that model through the normal Hugging Face cache; after the model and grammar wheels are installed, indexing and querying run without a network service. The MCP server is stdio-only and exposes the same local index/query operations to the harness process that launched it.
+
 ## Definition files (YAML, Markdown, .NET/MSBuild)
 
 Declarative definition files aren't code, so the function/class model doesn't fit them — but they're often exactly what you want to search ("what's the uninstall command for 7zip", "which target framework does this project use", "where is this build target defined"). Pass `--definitions` (`-D`) to additionally index them as **sections**:
@@ -314,7 +320,7 @@ These extractors are pure-stdlib (no PyYAML, no Markdown parser, no MSBuild SDK)
 
 PowerShell needs no `name` field handling out of the box — the grammar puts identifiers in `function_name`/`simple_name` children, which the registry resolves via `name_child_types`.
 
-**Optional grammars** (install the extra; verified node names): JavaScript, TypeScript, Go, Rust, Bash. Install via the extras, e.g. `pip install dowse-context-context[go,rust]`, or grab them all with `pip install "dowse-context[all-langs]"`.
+**Optional grammars** (install the extra; verified node names): JavaScript, TypeScript, Go, Rust, Bash. Install via the extras, e.g. `pip install "dowse-context[go,rust]"`, or grab them all with `pip install "dowse-context[all-langs]"`.
 
 | Language   | Extensions   | Extra           | Wheel                    | Notes                                                       |
 |------------|--------------|-----------------|--------------------------|-------------------------------------------------------------|

@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 import zvec
 from typer.testing import CliRunner
 
@@ -115,6 +116,50 @@ def test_query_token_report_compares_snippets_to_containing_files(
     assert report["files"] == [
         {"file_path": result["file_path"], "full_file_tokens": full_file_tokens}
     ]
+
+
+def test_build_filter_accepts_known_shortcut_filters() -> None:
+    sql_filter = service.build_filter(
+        "file_path LIKE 'src/%'",
+        kind="section",
+        lang="msbuild",
+    )
+
+    assert (
+        sql_filter
+        == "(file_path LIKE 'src/%') AND kind = 'section' AND language = 'msbuild'"
+    )
+
+
+def test_build_filter_rejects_invalid_shortcut_filters() -> None:
+    with pytest.raises(ValueError, match="invalid kind"):
+        service.build_filter(None, kind="function' OR 1=1 --", lang=None)
+
+    with pytest.raises(ValueError, match="invalid language"):
+        service.build_filter(None, kind=None, lang="python' OR 1=1 --")
+
+
+def test_cli_query_rejects_invalid_shortcut_filter_without_traceback(
+    sample_repo: Path, db_path: Path
+) -> None:
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    r = runner.invoke(
+        cli.app,
+        [
+            "query",
+            "manage sessions",
+            "--db",
+            str(db_path),
+            "--kind",
+            "function' OR 1=1 --",
+        ],
+    )
+
+    assert r.exit_code == 2
+    assert r.stdout == ""
+    assert "invalid kind" in r.stderr
+    assert "Traceback" not in r.stderr
 
 
 def test_query_token_report_handles_missing_containing_files(
@@ -522,6 +567,17 @@ def test_reindex_idempotent(sample_repo: Path, db_path: Path) -> None:
     r = runner.invoke(cli.app, ["index", str(sample_repo), "--db", str(db_path)])
     assert r.exit_code == 0, r.stdout + r.stderr
     assert _doc_count(db_path) == 8
+
+
+def test_index_skips_default_dowse_index_directory(sample_repo: Path, db_path: Path) -> None:
+    index_dir = sample_repo / ".dowse_index"
+    index_dir.mkdir()
+    (index_dir / "shadow.py").write_text("def should_not_index():\n    pass\n")
+
+    summary = service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    assert summary["indexed_files"] == 2
+    assert "should_not_index" not in _symbol_names(db_path)
 
 
 def test_reconcile_edited_file(sample_repo: Path, db_path: Path) -> None:

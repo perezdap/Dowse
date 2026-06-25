@@ -131,6 +131,9 @@ def query(
         )
     except LockedIndexError as exc:
         _locked_index_exit(exc)
+    except ValueError as exc:
+        _err(f"[query] {exc}")
+        raise typer.Exit(code=2) from None
     _emit(payload)
 
 

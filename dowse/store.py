@@ -41,7 +41,13 @@ def _is_lock_error(exc: BaseException) -> bool:
     # zvec phrases the lock refusal per mode: "Can't lock read-write collection"
     # when a writer is blocked, "Can't lock read-only collection" when a reader
     # is blocked by an active writer. Both mean "another handle owns it".
-    return "Can't lock" in str(exc) and "collection" in str(exc)
+    msg = str(exc)
+    return (
+        ("Can't lock" in msg and "collection" in msg)
+        or "lock hold by" in msg
+        or "No locks available" in msg
+        or "create id map failed" in msg
+    )
 
 
 def _sql_str(value: str) -> str:
