@@ -58,6 +58,18 @@ def _locked_index_exit(exc: LockedIndexError) -> None:
     raise typer.Exit(code=1) from None
 
 
+def _unsafe_root_exit(exc: service.UnsafeRootError) -> None:
+    _err(
+        f"[dowse] refusing to index the home directory (or an ancestor of it).\n"
+        f"[dowse] root={exc.root}\n"
+        f"[dowse] home={exc.home}\n"
+        "[dowse] Indexing here would walk your entire home tree — that is almost "
+        "never intended. cd into the project you want to index. To override, pass "
+        "--force (but be aware this can take a very long time and enlarge the index)."
+    )
+    raise typer.Exit(code=1) from None
+
+
 def _server_lock_exit(exc: ServerLockHeld, db: Path) -> None:
     holder = f" (pid {exc.holder_pid})" if exc.holder_pid else ""
     _err(
@@ -89,15 +101,21 @@ def index(
         False, "--definitions", "-D",
         help="Also index YAML, Markdown, and .NET/MSBuild definition files as sections.",
     ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Allow indexing the home directory or an ancestor of it (dangerous).",
+    ),
 ):
     """Recursively index function/class definitions under PATH."""
     try:
         summary = service.run_index(
             path=path, db=db, model=model, reset=reset,
-            batch=batch, definitions=definitions, log=_err,
+            batch=batch, definitions=definitions, force=force, log=_err,
         )
     except LockedIndexError as exc:
         _locked_index_exit(exc)
+    except service.UnsafeRootError as exc:
+        _unsafe_root_exit(exc)
     _emit(summary)
 
 
@@ -203,6 +221,10 @@ def init(
             "Does not run without this flag. May contend with dowse serve/index locks."
         ),
     ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Allow indexing the home directory or an ancestor of it (dangerous).",
+    ),
 ):
     """One-command bootstrap: MCP config, .gitignore, grammar coverage, index."""
     root_path = Path(path).resolve()
@@ -215,10 +237,13 @@ def init(
             skip_index=skip_index,
             harness=harness.value if harness else None,
             auto_index=auto_index,
+            force=force,
             log=_err,
         )
     except LockedIndexError as exc:
         _locked_index_exit(exc)
+    except service.UnsafeRootError as exc:
+        _unsafe_root_exit(exc)
     _emit(payload)
 
 
