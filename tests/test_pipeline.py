@@ -617,6 +617,82 @@ def test_reconcile_empty_file(sample_repo: Path, db_path: Path) -> None:
     assert "Connection.query" in names
 
 
+def test_run_index_refuses_home_directory(tmp_path: Path, monkeypatch) -> None:
+    # Indexing the user's home directory would walk the entire home tree.
+    home = tmp_path / "myhome"
+    home.mkdir()
+    (home / "pkg.py").write_text("def f():\n    pass\n")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    with pytest.raises(service.UnsafeRootError):
+        service.run_index(path=home, db=tmp_path / "idx")
+
+
+def test_run_index_refuses_ancestor_of_home(tmp_path: Path, monkeypatch) -> None:
+    # Indexing a parent of home (e.g. C:\) walks home and far more.
+    home = tmp_path / "myhome"
+    home.mkdir()
+    (home / "pkg.py").write_text("def f():\n    pass\n")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    with pytest.raises(service.UnsafeRootError):
+        service.run_index(path=tmp_path, db=tmp_path / "idx")
+
+
+def test_run_index_force_overrides_home_guard(sample_repo: Path, db_path: Path, monkeypatch) -> None:
+    # Treat the repo itself as home -> normally refused, but --force allows it.
+    monkeypatch.setattr(Path, "home", lambda: sample_repo)
+
+    with pytest.raises(service.UnsafeRootError):
+        service.run_index(path=sample_repo, db=db_path)
+
+    r = service.run_index(path=sample_repo, db=db_path, force=True)
+    assert r["status"] == "ok"
+
+
+def test_run_init_refuses_home_before_writing(tmp_path: Path, monkeypatch) -> None:
+    # `dowse init $HOME` must refuse BEFORE creating .mcp.json/.gitignore under home.
+    home = tmp_path / "myhome"
+    home.mkdir()
+    (home / "pkg.py").write_text("def f():\n    pass\n")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    with pytest.raises(service.UnsafeRootError):
+        service.run_init(root=home, db=home / ".dowse_index")
+
+    # No config files written to home on refusal.
+    assert not (home / ".mcp.json").exists()
+    assert not (home / ".gitignore").exists()
+
+
+def test_run_init_skip_index_allows_home(tmp_path: Path, monkeypatch) -> None:
+    # --skip-index never walks the tree, so home is fine for config-only init.
+    home = tmp_path / "myhome"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    payload = service.run_init(root=home, skip_index=True, log=lambda _m: None)
+    assert payload["status"] == "ok"
+    assert (home / ".mcp.json").exists()
+
+
+def test_cli_index_refuses_home_with_clear_error(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "myhome"
+    home.mkdir()
+    (home / "pkg.py").write_text("def f():\n    pass\n")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    r = runner.invoke(cli.app, ["index", str(home), "--db", str(tmp_path / "idx")])
+    assert r.exit_code == 1
+    assert r.stdout == ""
+    assert "home directory" in r.stderr.lower() or "unsafe" in r.stderr.lower()
+    assert "Traceback" not in r.stderr
+
+    # --force overrides the guard and indexes successfully.
+    r = runner.invoke(cli.app, ["index", str(home), "--db", str(tmp_path / "idx"), "--force"])
+    assert r.exit_code == 0, r.stdout + r.stderr
+
+
 def test_reconcile_deleted_file(sample_repo: Path, db_path: Path) -> None:
     r = runner.invoke(cli.app, ["index", str(sample_repo), "--db", str(db_path), "--reset"])
     assert r.exit_code == 0, r.stdout + r.stderr

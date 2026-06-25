@@ -97,6 +97,46 @@ def build_filter(raw: Optional[str], kind: Optional[str], lang: Optional[str]) -
     return " AND ".join(clauses) if clauses else None
 
 
+class UnsafeRootError(RuntimeError):
+    """Raised when an index root would walk the user's home directory.
+
+    Indexing ``$HOME`` (or an ancestor like the drive root) recursively parses
+    and embeds every source file under home — typically tens of thousands of
+    files across every cloned repo. That is almost never intended and is
+    usually an agent/CLI mistake (running from the wrong cwd). Refuse unless
+    the caller passes ``force=True``.
+    """
+
+    def __init__(self, root: Path, home: Path) -> None:
+        self.root = root
+        self.home = home
+        super().__init__(
+            f"refusing to index {root}: it is the home directory or an ancestor of it "
+            f"(home={home}). Indexing here would walk your entire home tree. "
+            f"Pass force=True / --force only if this is intentional."
+        )
+
+
+def _is_unsafe_root(root: Path, home: Path) -> bool:
+    """True if indexing ``root`` would walk ``home`` (root is home or an ancestor)."""
+    try:
+        root = root.resolve()
+        home = home.resolve()
+    except OSError:
+        return False
+    return root == home or home.is_relative_to(root)
+
+
+def _assert_safe_root(
+    root: Path, *, home: Path | None = None, force: bool = False
+) -> None:
+    if force:
+        return
+    home = home if home is not None else Path.home()
+    if _is_unsafe_root(root, home):
+        raise UnsafeRootError(Path(root), home)
+
+
 def run_index(
     path: str | Path,
     db: str | Path = "./.dowse_index",
@@ -105,6 +145,7 @@ def run_index(
     batch: int = 128,
     definitions: bool = False,
     log: Callable[[str], None] | None = None,
+    force: bool = False,
 ) -> dict:
     """Index a directory; return a summary dict. `log` receives progress lines."""
     def _log(msg: str) -> None:
@@ -112,6 +153,7 @@ def run_index(
             log(msg)
 
     root = Path(path).resolve()
+    _assert_safe_root(root, force=force)
     exts = supported_extensions(include_definitions=definitions)
     _log(f"[index] root={root}")
     _log(f"[index] extensions={sorted(exts)}")
@@ -551,6 +593,7 @@ def run_init(
     harness: str | None = None,
     auto_index: bool = False,
     log: Callable[[str], None] | None = None,
+    force: bool = False,
 ) -> dict:
     """One-command project bootstrap: MCP config, gitignore, coverage, index.
 
@@ -570,6 +613,13 @@ def run_init(
     if harness and harness not in _HARNESS_CONFIGS:
         raise ValueError(f"unsupported harness: {harness}")
 
+    # Refuse an unsafe root before any writes, otherwise `dowse init $HOME`
+    # would create/merge .mcp.json and .gitignore under home and only then
+    # error when run_index trips the guard. Skip the check when --skip-index
+    # is set, since no indexing (and thus no tree walk) happens in that mode.
+    if not skip_index:
+        _assert_safe_root(root_path, force=force)
+
     _log("[init] configuring .mcp.json ...")
     mcp_result = _merge_mcp_config(root_path, db_rel, harness)
 
@@ -586,6 +636,7 @@ def run_init(
         _log("[init] running initial index ...")
         index_summary = run_index(
             path=root_path, db=db_path, model=model, reset=False, log=_log,
+            force=force,
         )
 
     auto_index_result = None

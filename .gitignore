@@ -20,6 +20,7 @@ venv/
 .testpypi-venv/
 .dowse_index/
 *.serve.lock
+.mcp.json
 
 # IDE
 .idea/
