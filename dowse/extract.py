@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 from typing import Callable, Iterable
 
 from tree_sitter import Language, Parser
@@ -339,13 +340,49 @@ def extract_file(path: Path, root: Path, include_definitions: bool = False) -> l
     return symbols
 
 
+_AGENT_INSTRUCTION_FILES = frozenset({
+    ".cursorrules",
+    "agents.md",
+    "claude.md",
+    "codex.md",
+    "copilot-instructions.md",
+    "gemini.md",
+})
+
+
+def _git_ignored_relpaths(root: Path, relpaths: list[str]) -> set[str]:
+    """Return paths ignored by git, or empty when git/check-ignore is unavailable."""
+    if not relpaths:
+        return set()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "-z", "--stdin"],
+            input="\0".join(relpaths) + "\0",
+            # git emits/consumes raw UTF-8 path bytes under -z; force UTF-8 so a
+            # non-ASCII filename can't trip the locale (cp1252) codec on Windows.
+            encoding="utf-8",
+            errors="surrogateescape",
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return set()
+    if proc.returncode not in (0, 1):
+        # Not a git work tree (or another git error): degrade to the static skips.
+        return set()
+    return {p.replace("\\", "/") for p in proc.stdout.split("\0") if p}
+
+
 def walk_directory(root: Path, ignore: Iterable[str] = (), exts: set[str] | None = None) -> Iterable[Path]:
-    """Yield candidate source files, skipping common noise directories."""
+    """Yield candidate source files, skipping common noise, agent docs, and gitignored paths."""
     skip = {".git", ".venv", "venv", "node_modules", "__pycache__",
             ".mypy_cache", ".pytest_cache", ".dowse_index", "dist", "build", ".tox", *ignore}
     if exts is None:
         exts = supported_extensions()
     root = root.resolve()
+
+    candidates: list[tuple[str, Path]] = []
     for p in root.rglob("*"):
         if not p.is_file():
             continue
@@ -354,5 +391,12 @@ def walk_directory(root: Path, ignore: Iterable[str] = (), exts: set[str] | None
         rel_parts = p.relative_to(root).parts
         if any(part in skip for part in rel_parts):
             continue
+        if p.name.lower() in _AGENT_INSTRUCTION_FILES:
+            continue
         if p.suffix.lower() in exts:
+            candidates.append((p.relative_to(root).as_posix(), p))
+
+    ignored = _git_ignored_relpaths(root, [rel for rel, _ in candidates])
+    for rel, p in candidates:
+        if rel not in ignored:
             yield p
