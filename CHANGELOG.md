@@ -7,6 +7,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-25
+
+### Changed
+- Index walking now respects Git ignore rules: candidate files are filtered
+  through `git check-ignore`, so paths excluded by `.gitignore`,
+  `.git/info/exclude`, or a global git excludes file are no longer indexed.
+  Matching fails open when git is unavailable or the tree is not a work tree,
+  preserving the prior index-everything behavior.
+
+### Security
+- Agent-instruction files are skipped during indexing even with
+  `--definitions`: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `CODEX.md`,
+  `copilot-instructions.md`, and `.cursorrules`. These exist for AI agents, not
+  as code context, and are usually committed (so `.gitignore` would not catch
+  them).
+
+### Tested
+- Added integration tests covering gitignored source exclusion, directory-pattern
+  ignores, non-ASCII path handling, non-git graceful degradation, and
+  agent-instruction doc exclusion under `--definitions`.
+
 ## [0.2.2] - 2026-06-25
 
 ### Added
