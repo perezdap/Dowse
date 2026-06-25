@@ -12,6 +12,7 @@ from typing import Callable, Iterable
 
 from tree_sitter import Language, Parser
 
+from .definitions import DEFINITION_EXTRACTORS, definition_extensions, definition_languages
 from .models import Symbol
 
 # ---------------------------------------------------------------------------
@@ -220,7 +221,6 @@ def scan_language_coverage(
 def supported_extensions(include_definitions: bool = False) -> set[str]:
     exts = set(_REGISTRY)
     if include_definitions:
-        from .definitions import definition_extensions
         exts |= definition_extensions()
     return exts
 
@@ -233,6 +233,14 @@ def known_extensions() -> frozenset[str]:
     directory traversal.
     """
     return frozenset(_EXT_TO_LANG)
+
+
+def known_languages(include_definitions: bool = True) -> frozenset[str]:
+    """Every language value accepted by shortcut filters."""
+    langs = set(_LANG_META)
+    if include_definitions:
+        langs.update(definition_languages())
+    return frozenset(langs)
 
 
 def _parser_for(spec: LangSpec) -> Parser:
@@ -295,7 +303,6 @@ def extract_file(path: Path, root: Path, include_definitions: bool = False) -> l
     if spec is None:
         # Fall back to declarative-definition extractors (YAML/Markdown) if asked.
         if include_definitions:
-            from .definitions import DEFINITION_EXTRACTORS
             extractor = DEFINITION_EXTRACTORS.get(suffix)
             if extractor is not None:
                 return extractor(path, root)
@@ -335,7 +342,7 @@ def extract_file(path: Path, root: Path, include_definitions: bool = False) -> l
 def walk_directory(root: Path, ignore: Iterable[str] = (), exts: set[str] | None = None) -> Iterable[Path]:
     """Yield candidate source files, skipping common noise directories."""
     skip = {".git", ".venv", "venv", "node_modules", "__pycache__",
-            ".mypy_cache", ".pytest_cache", "dist", "build", ".tox", *ignore}
+            ".mypy_cache", ".pytest_cache", ".dowse_index", "dist", "build", ".tox", *ignore}
     if exts is None:
         exts = supported_extensions()
     root = root.resolve()

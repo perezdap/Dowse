@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 import dowse.cli as cli
 import dowse.service as service
+from dowse._dist import distribution_name
 from dowse.server_lock import acquire_server_lock
 
 runner = CliRunner()
@@ -94,3 +95,18 @@ def test_doctor_mcp_sdk_field(monkeypatch, tmp_path: Path) -> None:
     report = service.run_doctor(db=tmp_path / ".dowse_index", root=tmp_path)
     assert report["install"]["mcp_sdk"]["installed"] is False
     assert report["install"]["mcp_sdk"]["version"] is None
+
+
+def test_doctor_uses_distribution_name_for_dowse_version(monkeypatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    def fake_version(name: str) -> str:
+        calls.append(name)
+        return "9.9.9"
+
+    monkeypatch.setattr(service, "version", fake_version)
+
+    report = service.run_doctor(db=tmp_path / ".dowse_index", root=tmp_path)
+
+    assert calls[0] == distribution_name()
+    assert report["install"]["dowse_version"] == "9.9.9"

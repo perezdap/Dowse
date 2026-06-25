@@ -21,15 +21,17 @@ from typing import Callable, Iterator, Optional
 
 import dowse as dowse_pkg
 
+from ._dist import distribution_name
 from .embed import DEFAULT_MODEL, Embedder
 from .extract import (
     extract_file,
     known_extensions,
+    known_languages,
     scan_language_coverage,
     supported_extensions,
     walk_directory,
 )
-from .store import LockedIndexError, Store
+from .store import LockedIndexError, Store, _sql_str
 from .server_lock import probe_server_lock
 
 # Cache embedders by model name so repeated queries in a long-lived process
@@ -37,6 +39,7 @@ from .server_lock import probe_server_lock
 _EMBEDDERS: dict[str, Embedder] = {}
 _TOKEN_ESTIMATOR = "regex-v1"
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]")
+_VALID_KINDS = frozenset({"function", "class", "section"})
 
 
 def get_embedder(model: str = DEFAULT_MODEL) -> Embedder:
@@ -79,9 +82,18 @@ def build_filter(raw: Optional[str], kind: Optional[str], lang: Optional[str]) -
     if raw:
         clauses.append(f"({raw})")
     if kind:
-        clauses.append(f"kind = '{kind}'")
+        if kind not in _VALID_KINDS:
+            raise ValueError(
+                f"invalid kind {kind!r}; expected one of: {', '.join(sorted(_VALID_KINDS))}"
+            )
+        clauses.append(f"kind = {_sql_str(kind)}")
     if lang:
-        clauses.append(f"language = '{lang}'")
+        valid_langs = known_languages(include_definitions=True)
+        if lang not in valid_langs:
+            raise ValueError(
+                f"invalid language {lang!r}; expected one of: {', '.join(sorted(valid_langs))}"
+            )
+        clauses.append(f"language = {_sql_str(lang)}")
     return " AND ".join(clauses) if clauses else None
 
 
@@ -308,7 +320,7 @@ def _mcp_sdk_info() -> dict:
 
 def _dowse_install_info() -> dict:
     try:
-        pkg_version = version("dowse")
+        pkg_version = version(distribution_name())
     except PackageNotFoundError:
         pkg_version = getattr(dowse_pkg, "__version__", None)
     module_root = Path(dowse_pkg.__file__).resolve().parent

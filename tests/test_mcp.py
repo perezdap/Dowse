@@ -1,12 +1,13 @@
 """MCP server tool registration and delegation (issue #9).
 
-The MCP SDK is an optional install (`pip install dowse-context-context[mcp]`), so every test
+The MCP SDK is an optional install (`pip install "dowse-context[mcp]"`), so every test
 uses `pytest.importorskip("mcp")` to skip cleanly where the SDK is absent. CI
 installs `.[dev,mcp]` so these tests run there instead of skipping.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,21 @@ def _build_server():
     return build_server()
 
 
+async def _call_tool_json(mcp, name: str, arguments: dict):
+    result = await mcp.call_tool(name, arguments)
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, tuple) and len(result) == 2:
+        content, metadata = result
+        if isinstance(metadata, dict) and "result" in metadata:
+            return metadata["result"]
+        result = content
+    if isinstance(result, list) and result and hasattr(result[0], "text"):
+        values = [json.loads(item.text) for item in result]
+        return values[0] if len(values) == 1 else values
+    return result
+
+
 def test_mcp_index_status_tool(sample_repo: Path) -> None:
     """The MCP server exposes index_status and it delegates to service."""
     pytest.importorskip("mcp")
@@ -30,9 +46,7 @@ def test_mcp_index_status_tool(sample_repo: Path) -> None:
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert "index_status" in names
 
-    # Delegates to service.run_index_status (sync call on the raw function).
-    tool = mcp._tool_manager._tools["index_status"]
-    result = tool.fn(workspace=str(sample_repo))
+    result = asyncio.run(_call_tool_json(mcp, "index_status", {"workspace": str(sample_repo)}))
     assert result["exists"] is True
     assert result["indexed_symbols"] == 8
     assert result["languages"] == ["python"]
@@ -48,11 +62,14 @@ def test_mcp_query_context_tool(sample_repo: Path) -> None:
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert "query_context" in names
 
-    tool = mcp._tool_manager._tools["query_context"]
-    results = tool.fn(
-        query="how do I authenticate a user and get a token",
-        db=str(sample_repo / ".dowse_index"),
-    )
+    results = asyncio.run(_call_tool_json(
+        mcp,
+        "query_context",
+        {
+            "query": "how do I authenticate a user and get a token",
+            "db": str(sample_repo / ".dowse_index"),
+        },
+    ))
     assert len(results) > 0
     top = results[0]
     assert top["symbol_name"] in ("login", "make_token")
@@ -68,12 +85,15 @@ def test_mcp_index_codebase_tool(sample_repo: Path) -> None:
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert "index_codebase" in names
 
-    tool = mcp._tool_manager._tools["index_codebase"]
-    result = tool.fn(
-        path=str(sample_repo),
-        db=str(sample_repo / ".dowse_index"),
-        reset=True,
-    )
+    result = asyncio.run(_call_tool_json(
+        mcp,
+        "index_codebase",
+        {
+            "path": str(sample_repo),
+            "db": str(sample_repo / ".dowse_index"),
+            "reset": True,
+        },
+    ))
     assert result["status"] == "ok"
     assert result["indexed_symbols"] == 8
     assert result["indexed_files"] == 2
