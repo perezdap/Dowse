@@ -23,6 +23,7 @@ from typing import Optional
 import typer
 
 from .embed import DEFAULT_MODEL
+from . import bootstrap
 from . import cursor_hooks
 from . import service
 from .server_lock import ServerLockHeld, acquire_server_lock
@@ -230,7 +231,7 @@ def init(
     root_path = Path(path).resolve()
     db_path = Path(db).resolve() if db else root_path / ".dowse_index"
     try:
-        payload = service.run_init(
+        payload = bootstrap.run_init(
             root=root_path,
             db=db_path,
             model=model,
@@ -242,7 +243,7 @@ def init(
         )
     except LockedIndexError as exc:
         _locked_index_exit(exc)
-    except service.UnsafeRootError as exc:
+    except bootstrap.UnsafeRootError as exc:
         _unsafe_root_exit(exc)
     _emit(payload)
 

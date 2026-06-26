@@ -7,6 +7,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import dowse.cli as cli
+import dowse.bootstrap as bootstrap
 import dowse.cursor_hooks as cursor_hooks
 import dowse.service as service
 
@@ -89,7 +90,7 @@ def test_init_without_auto_index_does_not_touch_hooks(tmp_path: Path, monkeypatc
     cursor_dir = fake_home / ".cursor"
     monkeypatch.setattr(cursor_hooks, "default_cursor_dir", lambda: cursor_dir)
 
-    service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     assert not (cursor_dir / "hooks.json").exists()
 
@@ -100,7 +101,7 @@ def test_init_auto_index_installs_hook(tmp_path: Path, monkeypatch) -> None:
     cursor_dir = fake_home / ".cursor"
     monkeypatch.setattr(cursor_hooks, "default_cursor_dir", lambda: cursor_dir)
 
-    result = service.run_init(
+    result = bootstrap.run_init(
         root=tmp_path,
         db=tmp_path / ".dowse_index",
         skip_index=True,

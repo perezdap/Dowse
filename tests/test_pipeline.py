@@ -12,6 +12,7 @@ import zvec
 from typer.testing import CliRunner
 
 import dowse.cli as cli
+import dowse.bootstrap as bootstrap
 import dowse.service as service
 from conftest import _symbol_docs, _symbol_names
 from dowse.server_lock import acquire_server_lock
@@ -657,8 +658,8 @@ def test_run_init_refuses_home_before_writing(tmp_path: Path, monkeypatch) -> No
     (home / "pkg.py").write_text("def f():\n    pass\n")
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    with pytest.raises(service.UnsafeRootError):
-        service.run_init(root=home, db=home / ".dowse_index")
+    with pytest.raises(bootstrap.UnsafeRootError):
+        bootstrap.run_init(root=home, db=home / ".dowse_index")
 
     # No config files written to home on refusal.
     assert not (home / ".mcp.json").exists()
@@ -671,7 +672,7 @@ def test_run_init_skip_index_allows_home(tmp_path: Path, monkeypatch) -> None:
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    payload = service.run_init(root=home, skip_index=True, log=lambda _m: None)
+    payload = bootstrap.run_init(root=home, skip_index=True, log=lambda _m: None)
     assert payload["status"] == "ok"
     assert (home / ".mcp.json").exists()
 
