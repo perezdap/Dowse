@@ -6,9 +6,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import dowse.bootstrap as bootstrap
 import dowse.cli as cli
 import dowse.extract as extract
-import dowse.service as service
 
 runner = CliRunner()
 
@@ -19,7 +19,7 @@ runner = CliRunner()
 
 def test_init_creates_mcp_json_in_fresh_repo(tmp_path: Path) -> None:
     """run_init writes .mcp.json with a dowse server entry when none exists."""
-    result = service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    result = bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     mcp_file = tmp_path / ".mcp.json"
     assert mcp_file.is_file()
@@ -41,7 +41,7 @@ def test_init_merges_existing_mcp_json_preserving_other_servers(tmp_path: Path) 
     }
     (tmp_path / ".mcp.json").write_text(json.dumps(existing), encoding="utf-8")
 
-    result = service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    result = bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     data = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
     assert "other-tool" in data["mcpServers"]
@@ -53,8 +53,8 @@ def test_init_merges_existing_mcp_json_preserving_other_servers(tmp_path: Path) 
 
 def test_init_mcp_json_idempotent_on_rerun(tmp_path: Path) -> None:
     """Re-running init does not duplicate the dowse entry."""
-    service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
-    service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     data = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
     dowse_entries = [k for k in data["mcpServers"] if k == "dowse"]
@@ -63,7 +63,7 @@ def test_init_mcp_json_idempotent_on_rerun(tmp_path: Path) -> None:
 
 def test_init_pi_harness_writes_adapter_config(tmp_path: Path) -> None:
     """run_init can write a Pi-compatible pi-mcp-adapter server entry."""
-    result = service.run_init(
+    result = bootstrap.run_init(
         root=tmp_path,
         db=tmp_path / ".dowse_index",
         skip_index=True,
@@ -83,10 +83,10 @@ def test_init_pi_harness_writes_adapter_config(tmp_path: Path) -> None:
 
 def test_init_pi_harness_reports_missing_requirements(tmp_path: Path, monkeypatch) -> None:
     """Pi preset reports actionable guidance when Pi or pi-mcp-adapter are absent."""
-    monkeypatch.setattr(service.shutil, "which", lambda _cmd: None)
+    monkeypatch.setattr(bootstrap.shutil, "which", lambda _cmd: None)
     monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path / "empty-pi-agent"))
 
-    result = service.run_init(
+    result = bootstrap.run_init(
         root=tmp_path,
         db=tmp_path / ".dowse_index",
         skip_index=True,
@@ -106,9 +106,9 @@ def test_init_pi_harness_detects_present_requirements(tmp_path: Path, monkeypatc
     pi_agent_dir = tmp_path / "pi-agent"
     (pi_agent_dir / "npm" / "node_modules" / "pi-mcp-adapter").mkdir(parents=True)
     monkeypatch.setenv("PI_CODING_AGENT_DIR", str(pi_agent_dir))
-    monkeypatch.setattr(service.shutil, "which", lambda _cmd: "C:/tools/pi.cmd")
+    monkeypatch.setattr(bootstrap.shutil, "which", lambda _cmd: "C:/tools/pi.cmd")
 
-    result = service.run_init(
+    result = bootstrap.run_init(
         root=tmp_path,
         db=tmp_path / ".dowse_index",
         skip_index=True,
@@ -127,7 +127,7 @@ def test_init_pi_harness_detects_present_requirements(tmp_path: Path, monkeypatc
 
 def test_init_appends_dowse_index_to_gitignore(tmp_path: Path) -> None:
     """run_init adds .dowse_index/ to .gitignore when absent."""
-    service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert ".dowse_index/" in gitignore
@@ -135,8 +135,8 @@ def test_init_appends_dowse_index_to_gitignore(tmp_path: Path) -> None:
 
 def test_init_gitignore_idempotent(tmp_path: Path) -> None:
     """Re-running init does not duplicate the .gitignore line."""
-    service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
-    service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     lines = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
     dowse_lines = [l for l in lines if ".dowse_index/" in l]
@@ -147,7 +147,7 @@ def test_init_preserves_existing_gitignore_content(tmp_path: Path) -> None:
     """run_init appends to an existing .gitignore without clobbering it."""
     (tmp_path / ".gitignore").write_text("*.pyc\n.venv/\n", encoding="utf-8")
 
-    service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     content = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert "*.pyc" in content
@@ -167,7 +167,7 @@ def test_init_reports_missing_grammars(tmp_path: Path, monkeypatch) -> None:
 
     (tmp_path / "main.go").write_text("package main\n", encoding="utf-8")
 
-    result = service.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
+    result = bootstrap.run_init(root=tmp_path, db=tmp_path / ".dowse_index", skip_index=True)
 
     missing = result.get("missing_grammars", [])
     langs = [m["language"] for m in missing]
@@ -180,7 +180,7 @@ def test_init_reports_missing_grammars(tmp_path: Path, monkeypatch) -> None:
 
 def test_init_runs_initial_index(sample_repo: Path, db_path: Path) -> None:
     """run_init indexes the repo and returns index summary."""
-    result = service.run_init(root=sample_repo, db=db_path)
+    result = bootstrap.run_init(root=sample_repo, db=db_path)
 
     assert result["index"]["status"] == "ok"
     assert result["index"]["indexed_symbols"] > 0
