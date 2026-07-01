@@ -71,11 +71,32 @@ def test_session_start_skips_without_index(tmp_path: Path, monkeypatch) -> None:
     assert result["reason"] == "no_opted_in_workspace"
 
 
-def test_session_start_indexes_when_dowse_index_exists(
+def test_session_start_skips_when_index_is_fresh(sample_repo: Path, monkeypatch) -> None:
+    db = sample_repo / ".dowse_index"
+    service.run_index(path=sample_repo, db=db, log=lambda _m: None)
+    monkeypatch.chdir(sample_repo)
+
+    def fail_if_called(**_kwargs):
+        raise AssertionError("fresh session hook should not reindex")
+
+    monkeypatch.setattr(service, "run_index", fail_if_called)
+
+    result = cursor_hooks.run_session_start_index(db_rel=".dowse_index")
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "index_fresh"
+    assert result["indexed_symbols"] == 8
+
+
+def test_session_start_indexes_when_dowse_index_is_stale(
     sample_repo: Path, monkeypatch
 ) -> None:
     db = sample_repo / ".dowse_index"
     service.run_index(path=sample_repo, db=db, log=lambda _m: None)
+    (sample_repo / "pkg" / "auth.py").write_text(
+        "def login(user):\n    return user\n\ndef logout(user):\n    return user\n",
+        encoding="utf-8",
+    )
     monkeypatch.chdir(sample_repo)
 
     result = cursor_hooks.run_session_start_index(db_rel=".dowse_index")

@@ -88,6 +88,16 @@ def run_session_start_index(
 
     db_path = workspace / db_rel
     try:
+        status = service.run_index_status(db=db_path, root=workspace)
+        if status.get("exists") is True and status.get("stale") is False:
+            return {
+                "status": "skipped",
+                "reason": "index_fresh",
+                "workspace": str(workspace),
+                "db_path": str(db_path),
+                "indexed_symbols": status.get("indexed_symbols", 0),
+            }
+
         summary = service.run_index(
             path=workspace,
             db=db_path,

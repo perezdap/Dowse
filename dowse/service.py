@@ -233,6 +233,13 @@ def _run_index_locked(
 
     _log("[index] building vector index (optimize) ...")
     store.optimize()
+    _write_index_metadata(
+        db=Path(db),
+        root=root,
+        indexed_files=current_relpaths,
+        indexed_extensions=exts,
+        definitions=definitions,
+    )
 
     return {
         "status": "ok",
@@ -242,6 +249,37 @@ def _run_index_locked(
         "db": str(db),
         "elapsed_seconds": round(time.time() - t0, 2),
     }
+
+
+def _metadata_path(db: Path) -> Path:
+    return db / "dowse-meta.json"
+
+
+def _write_index_metadata(
+    *,
+    db: Path,
+    root: Path,
+    indexed_files: set[str],
+    indexed_extensions: set[str],
+    definitions: bool,
+) -> None:
+    payload = {
+        "version": 1,
+        "root": str(root),
+        "indexed_at": time.time(),
+        "indexed_files": sorted(indexed_files),
+        "indexed_extensions": sorted(indexed_extensions),
+        "definitions": definitions,
+    }
+    _metadata_path(db).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _read_index_metadata(db: Path) -> dict | None:
+    try:
+        payload = json.loads(_metadata_path(db).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _db_mtime(db: Path) -> float | None:
@@ -292,8 +330,25 @@ def run_index_status(
     with _index_lock(db_path):
         store = Store.open_readonly(db_path)
         last_indexed = _db_mtime(db_path)
-        stale = _is_stale(root, last_indexed) if root is not None else None
-        indexed_files = len(store.list_indexed_files())
+        metadata = _read_index_metadata(db_path)
+        stored_file_set = store.list_indexed_files()
+        indexed_file_set = _metadata_file_set(metadata) or stored_file_set
+        indexed_extension_set = _metadata_extension_set(metadata)
+        if root is not None and metadata is None:
+            stale = True
+        else:
+            stale = (
+                _is_stale(
+                    root,
+                    last_indexed,
+                    indexed_files=indexed_file_set,
+                    indexed_extensions=indexed_extension_set,
+                    definitions=_metadata_definitions(metadata),
+                )
+                if root is not None
+                else None
+            )
+        indexed_files = len(stored_file_set)
         indexed_symbols = store.count()
         dimension = store.dimension
         languages = store.list_indexed_languages()
@@ -312,6 +367,28 @@ def run_index_status(
     }
 
 
+def _metadata_file_set(metadata: dict | None) -> set[str] | None:
+    if metadata is None:
+        return None
+    files = metadata.get("indexed_files")
+    if not isinstance(files, list) or not all(isinstance(path, str) for path in files):
+        return None
+    return set(files)
+
+
+def _metadata_extension_set(metadata: dict | None) -> set[str] | None:
+    if metadata is None:
+        return None
+    extensions = metadata.get("indexed_extensions")
+    if not isinstance(extensions, list) or not all(isinstance(ext, str) for ext in extensions):
+        return None
+    return set(extensions)
+
+
+def _metadata_definitions(metadata: dict | None) -> bool:
+    return bool(metadata and metadata.get("definitions") is True)
+
+
 def _missing_grammars_for(root: str | Path) -> list[dict]:
     """Per-language coverage for files on disk that have no installed grammar."""
     return [
@@ -326,23 +403,42 @@ def _missing_grammars_for(root: str | Path) -> list[dict]:
     ]
 
 
-def _is_stale(root: str | Path, last_indexed: float | None) -> bool | None:
+def _is_stale(
+    root: str | Path,
+    last_indexed: float | None,
+    *,
+    indexed_files: set[str] | None = None,
+    indexed_extensions: set[str] | None = None,
+    definitions: bool = False,
+) -> bool | None:
     """True if any source file is newer than the index.
 
     Walks every extension dowse recognises (installed or not) so that edits to
-    files with a missing grammar wheel still flip `stale` to `True`. Returns
-    None when the comparison can't be made (no index mtime yet).
+    files with a missing grammar wheel still flip `stale` to `True`. When the
+    caller provides indexed files, also treat deleted indexed files as stale so
+    the next index pass can reconcile orphaned symbols. Returns None when the
+    comparison can't be made (no index mtime yet).
     """
     if last_indexed is None:
         return None
-    exts = known_extensions()
-    root_path = Path(root)
+    indexed_exts = {Path(file_path).suffix.lower() for file_path in indexed_files or set()}
+    current_indexable_exts = supported_extensions(include_definitions=definitions)
+    exts = set(known_extensions()) | current_indexable_exts | indexed_exts
+    root_path = Path(root).resolve()
+    current_files: set[str] = set()
     for p in walk_directory(root_path, exts=exts):
         try:
             if p.stat().st_mtime > last_indexed:
                 return True
         except OSError:
             continue
+        suffix = p.suffix.lower()
+        if indexed_extensions is not None and suffix in current_indexable_exts and suffix not in indexed_extensions:
+            return True
+        if indexed_files is not None:
+            current_files.add(p.relative_to(root_path).as_posix())
+    if indexed_files is not None and not indexed_files <= current_files:
+        return True
     return False
 
 
