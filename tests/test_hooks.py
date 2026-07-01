@@ -105,6 +105,27 @@ def test_session_start_indexes_when_dowse_index_is_stale(
     assert result["indexed_symbols"] >= 0
 
 
+def test_session_start_does_not_status_scan_unsafe_home_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / ".dowse_index").mkdir()
+    monkeypatch.chdir(fake_home)
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    def fail_if_called(**_kwargs):
+        raise AssertionError("unsafe roots should fail before status scans")
+
+    monkeypatch.setattr(service, "run_index_status", fail_if_called)
+
+    result = cursor_hooks.run_session_start_index(db_rel=".dowse_index")
+
+    assert result["status"] == "error"
+    assert result["reason"] == "index_failed"
+    assert "refusing to index" in result["detail"]
+
+
 def test_init_without_auto_index_does_not_touch_hooks(tmp_path: Path, monkeypatch) -> None:
     fake_home = tmp_path / "home"
     fake_home.mkdir()

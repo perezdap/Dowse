@@ -88,6 +88,7 @@ def run_session_start_index(
 
     db_path = workspace / db_rel
     try:
+        service.assert_safe_root(workspace)
         status = service.run_index_status(db=db_path, root=workspace)
         if status.get("exists") is True and status.get("stale") is False:
             return {

@@ -161,13 +161,13 @@ export default function (pi: ExtensionAPI): void {
 
 		// Only surface outcomes the user actually cares about; skipped is silent.
 		if (result.killed) {
-			ctx.ui.notify("dowse reindex timed out (continuing)", "warn");
+			ctx.ui.notify("dowse reindex timed out (continuing)", "warning");
 			return;
 		}
 		if (payload?.status === "ok" && payload.indexed_symbols > 0) {
 			ctx.ui.notify(`dowse: ${payload.indexed_symbols} symbols indexed`, "info");
 		} else if (payload?.status === "error") {
-			ctx.ui.notify(`dowse index failed: ${payload.reason}`, "warn");
+			ctx.ui.notify(`dowse index failed: ${payload.reason}`, "warning");
 		}
 	});
 }
