@@ -80,6 +80,85 @@ def test_status_stale_after_edit(sample_repo: Path, db_path: Path) -> None:
     assert stale["stale"] is True
 
 
+def test_status_stale_after_indexed_file_deleted(sample_repo: Path, db_path: Path) -> None:
+    """A deleted indexed file is stale so indexing can remove orphaned symbols."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    fresh = service.run_index_status(db=db_path, root=sample_repo)
+    assert fresh["stale"] is False
+
+    (sample_repo / "pkg" / "db.py").unlink()
+
+    stale = service.run_index_status(db=db_path, root=sample_repo)
+    assert stale["stale"] is True
+
+
+def test_status_stale_after_new_indexable_file_with_old_mtime(
+    sample_repo: Path, db_path: Path
+) -> None:
+    """A copied-in source file is stale even when its preserved mtime predates the index."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    fresh = service.run_index_status(db=db_path, root=sample_repo)
+    assert fresh["stale"] is False
+
+    copied = sample_repo / "pkg" / "copied.py"
+    copied.write_text("def restored():\n    return True\n", encoding="utf-8")
+    past = time.time() - 3600
+    os.utime(copied, (past, past))
+
+    stale = service.run_index_status(db=db_path, root=sample_repo)
+    assert stale["stale"] is True
+
+
+def test_status_stale_after_existing_file_changed_with_old_mtime(
+    sample_repo: Path, db_path: Path
+) -> None:
+    """A restored source file is stale even when its preserved mtime predates the index."""
+    source = sample_repo / "pkg" / "auth.py"
+    original = source.read_text(encoding="utf-8")
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    fresh = service.run_index_status(db=db_path, root=sample_repo)
+    assert fresh["stale"] is False
+
+    source.write_text(original + "\ndef restored():\n    return True\n", encoding="utf-8")
+    past = time.time() - 3600
+    os.utime(source, (past, past))
+
+    stale = service.run_index_status(db=db_path, root=sample_repo)
+    assert stale["stale"] is True
+
+
+def test_status_definitions_index_is_fresh_when_files_exist(
+    sample_repo: Path, db_path: Path
+) -> None:
+    """Definition files in the index are not mistaken for deleted source files."""
+    (sample_repo / "definition.md").write_text("# Package\n\n## Install\nRun it.\n")
+    service.run_index(path=sample_repo, db=db_path, reset=True, definitions=True)
+
+    status = service.run_index_status(db=db_path, root=sample_repo)
+
+    assert status["stale"] is False
+
+
+def test_status_stale_after_indexed_definition_file_deleted(
+    sample_repo: Path, db_path: Path
+) -> None:
+    """Deleted definition files are stale so indexing can remove their sections."""
+    definition = sample_repo / "definition.md"
+    definition.write_text("# Package\n\n## Install\nRun it.\n")
+    service.run_index(path=sample_repo, db=db_path, reset=True, definitions=True)
+
+    fresh = service.run_index_status(db=db_path, root=sample_repo)
+    assert fresh["stale"] is False
+
+    definition.unlink()
+
+    stale = service.run_index_status(db=db_path, root=sample_repo)
+    assert stale["stale"] is True
+
+
 def test_status_stale_includes_missing_grammar_files(
     sample_repo: Path, db_path: Path, monkeypatch
 ) -> None:
@@ -98,6 +177,28 @@ def test_status_stale_includes_missing_grammar_files(
     os.utime(sample_repo / "main.go", (future, future))
 
     stale = service.run_index_status(db=db_path, root=sample_repo)
+    assert stale["stale"] is True
+
+
+def test_status_stale_after_new_extension_becomes_indexable(
+    sample_repo: Path, db_path: Path, monkeypatch
+) -> None:
+    """A file skipped by an older grammar set is stale after that grammar appears."""
+    (sample_repo / "main.go").write_text("package main\nfunc main() {}\n")
+    grammar_exts = {".py", ".pyi"}
+    monkeypatch.setattr(
+        service,
+        "supported_extensions",
+        lambda include_definitions=False: set(grammar_exts),
+    )
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    fresh = service.run_index_status(db=db_path, root=sample_repo)
+    assert fresh["stale"] is False
+
+    grammar_exts.add(".go")
+    stale = service.run_index_status(db=db_path, root=sample_repo)
+
     assert stale["stale"] is True
 
 

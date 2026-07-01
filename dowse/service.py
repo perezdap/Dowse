@@ -7,6 +7,7 @@ how to present it.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -135,6 +136,11 @@ def _assert_safe_root(
         raise UnsafeRootError(Path(root), home)
 
 
+def assert_safe_root(root: str | Path, *, force: bool = False) -> None:
+    """Raise UnsafeRootError when indexing root would walk the user's home tree."""
+    _assert_safe_root(Path(root).resolve(), force=force)
+
+
 def run_index(
     path: str | Path,
     db: str | Path = "./.dowse_index",
@@ -151,7 +157,7 @@ def run_index(
             log(msg)
 
     root = Path(path).resolve()
-    _assert_safe_root(root, force=force)
+    assert_safe_root(root, force=force)
     exts = supported_extensions(include_definitions=definitions)
     _log(f"[index] root={root}")
     _log(f"[index] extensions={sorted(exts)}")
@@ -211,11 +217,15 @@ def _run_index_locked(
 
     total_symbols = 0
     current_relpaths: set[str] = set()
+    current_hashes: dict[str, str] = {}
     t0 = time.time()
     for i, fp in enumerate(files, start=1):
         symbols = extract_file(fp, root, include_definitions=definitions)
         rel = fp.relative_to(root).as_posix()
         current_relpaths.add(rel)
+        file_hash = _file_hash(fp)
+        if file_hash is not None:
+            current_hashes[rel] = file_hash
         if not symbols:
             stats = store.sync_file(rel, [], [])
             _log(f"[index] ({i}/{len(files)}) {rel}: +0 -{stats['deleted']}")
@@ -233,6 +243,14 @@ def _run_index_locked(
 
     _log("[index] building vector index (optimize) ...")
     store.optimize()
+    _write_index_metadata(
+        db=Path(db),
+        root=root,
+        indexed_files=current_relpaths,
+        indexed_file_hashes=current_hashes,
+        indexed_extensions=exts,
+        definitions=definitions,
+    )
 
     return {
         "status": "ok",
@@ -242,6 +260,50 @@ def _run_index_locked(
         "db": str(db),
         "elapsed_seconds": round(time.time() - t0, 2),
     }
+
+
+def _metadata_path(db: Path) -> Path:
+    return db / "dowse-meta.json"
+
+
+def _write_index_metadata(
+    *,
+    db: Path,
+    root: Path,
+    indexed_files: set[str],
+    indexed_file_hashes: dict[str, str],
+    indexed_extensions: set[str],
+    definitions: bool,
+) -> None:
+    payload = {
+        "version": 2,
+        "root": str(root),
+        "indexed_at": time.time(),
+        "indexed_files": sorted(indexed_files),
+        "indexed_file_hashes": {path: indexed_file_hashes[path] for path in sorted(indexed_file_hashes)},
+        "indexed_extensions": sorted(indexed_extensions),
+        "definitions": definitions,
+    }
+    _metadata_path(db).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _read_index_metadata(db: Path) -> dict | None:
+    try:
+        payload = json.loads(_metadata_path(db).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _file_hash(path: Path) -> str | None:
+    digest = hashlib.sha1()
+    try:
+        with path.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
 
 
 def _db_mtime(db: Path) -> float | None:
@@ -292,8 +354,27 @@ def run_index_status(
     with _index_lock(db_path):
         store = Store.open_readonly(db_path)
         last_indexed = _db_mtime(db_path)
-        stale = _is_stale(root, last_indexed) if root is not None else None
-        indexed_files = len(store.list_indexed_files())
+        metadata = _read_index_metadata(db_path)
+        stored_file_set = store.list_indexed_files()
+        indexed_file_set = _metadata_file_set(metadata) or stored_file_set
+        indexed_file_hashes = _metadata_file_hashes(metadata)
+        indexed_extension_set = _metadata_extension_set(metadata)
+        if root is not None and (metadata is None or indexed_file_hashes is None):
+            stale = True
+        else:
+            stale = (
+                _is_stale(
+                    root,
+                    last_indexed,
+                    indexed_files=indexed_file_set,
+                    indexed_file_hashes=indexed_file_hashes,
+                    indexed_extensions=indexed_extension_set,
+                    definitions=_metadata_definitions(metadata),
+                )
+                if root is not None
+                else None
+            )
+        indexed_files = len(stored_file_set)
         indexed_symbols = store.count()
         dimension = store.dimension
         languages = store.list_indexed_languages()
@@ -312,6 +393,39 @@ def run_index_status(
     }
 
 
+def _metadata_file_set(metadata: dict | None) -> set[str] | None:
+    if metadata is None:
+        return None
+    files = metadata.get("indexed_files")
+    if not isinstance(files, list) or not all(isinstance(path, str) for path in files):
+        return None
+    return set(files)
+
+
+def _metadata_file_hashes(metadata: dict | None) -> dict[str, str] | None:
+    if metadata is None:
+        return None
+    hashes = metadata.get("indexed_file_hashes")
+    if not isinstance(hashes, dict):
+        return None
+    if not all(isinstance(path, str) and isinstance(file_hash, str) for path, file_hash in hashes.items()):
+        return None
+    return hashes
+
+
+def _metadata_extension_set(metadata: dict | None) -> set[str] | None:
+    if metadata is None:
+        return None
+    extensions = metadata.get("indexed_extensions")
+    if not isinstance(extensions, list) or not all(isinstance(ext, str) for ext in extensions):
+        return None
+    return set(extensions)
+
+
+def _metadata_definitions(metadata: dict | None) -> bool:
+    return bool(metadata and metadata.get("definitions") is True)
+
+
 def _missing_grammars_for(root: str | Path) -> list[dict]:
     """Per-language coverage for files on disk that have no installed grammar."""
     return [
@@ -326,23 +440,55 @@ def _missing_grammars_for(root: str | Path) -> list[dict]:
     ]
 
 
-def _is_stale(root: str | Path, last_indexed: float | None) -> bool | None:
+def _is_stale(
+    root: str | Path,
+    last_indexed: float | None,
+    *,
+    indexed_files: set[str] | None = None,
+    indexed_file_hashes: dict[str, str] | None = None,
+    indexed_extensions: set[str] | None = None,
+    definitions: bool = False,
+) -> bool | None:
     """True if any source file is newer than the index.
 
     Walks every extension dowse recognises (installed or not) so that edits to
-    files with a missing grammar wheel still flip `stale` to `True`. Returns
-    None when the comparison can't be made (no index mtime yet).
+    files with a missing grammar wheel still flip `stale` to `True`. When the
+    caller provides indexed files, also treat deleted indexed files as stale so
+    the next index pass can reconcile orphaned symbols. Returns None when the
+    comparison can't be made (no index mtime yet).
     """
     if last_indexed is None:
         return None
-    exts = known_extensions()
-    root_path = Path(root)
+    indexed_exts = {Path(file_path).suffix.lower() for file_path in indexed_files or set()}
+    current_indexable_exts = supported_extensions(include_definitions=definitions)
+    exts = set(known_extensions()) | current_indexable_exts | indexed_exts
+    root_path = Path(root).resolve()
+    current_files: set[str] = set()
+    current_indexable_files: set[str] = set()
     for p in walk_directory(root_path, exts=exts):
         try:
             if p.stat().st_mtime > last_indexed:
                 return True
         except OSError:
             continue
+        suffix = p.suffix.lower()
+        if indexed_extensions is not None and suffix in current_indexable_exts and suffix not in indexed_extensions:
+            return True
+        if indexed_files is not None:
+            rel = p.relative_to(root_path).as_posix()
+            is_relevant = suffix in indexed_exts or suffix in current_indexable_exts
+            if is_relevant:
+                current_files.add(rel)
+                if indexed_file_hashes is not None and rel in indexed_files:
+                    if indexed_file_hashes.get(rel) != _file_hash(p):
+                        return True
+            if suffix in current_indexable_exts:
+                current_indexable_files.add(rel)
+    if indexed_files is not None:
+        if not indexed_files <= current_files:
+            return True
+        if not current_indexable_files <= indexed_files:
+            return True
     return False
 
 
