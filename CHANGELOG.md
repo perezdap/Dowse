@@ -7,6 +7,31 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-07-01
+
+### Added
+- **Pi session auto-index extension:** `skills/dowse-cli/pi-extension.ts` runs
+  `dowse hook session-start` on Pi session start, keeping the local
+  `.dowse_index` fresh without manual reindexing. Mirrors the Cursor
+  `sessionStart` hook behavior (opt-in, fail-open).
+- **Content-aware staleness detection:** `dowse status` now detects deleted
+  files, new files with old mtimes, content changes with preserved mtimes, and
+  newly-supported grammar extensions — not just mtime newer than index. Uses
+  SHA1 hashes for content comparison when mtime is unreliable.
+- **Index metadata:** `dowse index` writes `dowse-meta.json` with indexed files,
+  hashes, extensions, and definitions flag so status checks have ground truth.
+
+### Changed
+- Session hook (`dowse hook session-start`) skips reindexing when the index is
+  already fresh, avoiding redundant work on session reload.
+- Bootstrap logic extracted into `dowse/bootstrap.py` so `service.py` remains
+  the single source of truth for index/query orchestration.
+
+### Tested
+- Added integration tests covering fresh-index skip, stale-after-delete,
+  stale-after-copy-with-old-mtime, stale-after-content-change, definition file
+  staleness, and new-extension staleness.
+
 ## [0.2.3] - 2026-06-25
 
 ### Changed
