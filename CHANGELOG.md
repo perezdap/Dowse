@@ -7,6 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-07-01
+
+### Changed
+- **Single-sourced version:** `dowse.__version__` now derives from installed
+  package metadata (`importlib.metadata.version`) instead of a hardcoded string,
+  so it can never drift from the `pyproject.toml` version again.
+
+### Fixed
+- The Release workflow now runs the test suite (ruff + pytest) before building and
+  publishing, so a package that fails CI can no longer reach PyPI. (The published
+  0.2.5 wheel carries a stale `__version__` of `0.2.3` because the previous Release
+  workflow skipped tests; 0.2.6 is the first release where the imported version
+  matches the distribution version.)
+
 ## [0.2.5] - 2026-07-01
 
 ### Added
