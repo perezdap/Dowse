@@ -108,3 +108,19 @@ def test_docs_do_not_repeat_distribution_name() -> None:
 
     for path in checked:
         assert "dowse-context-context" not in path.read_text(encoding="utf-8")
+
+
+def test_dowse_harness_setup_skill_covers_common_harnesses() -> None:
+    skill = ROOT / "skills" / "dowse-harness-setup" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    assert "name: dowse-harness-setup" in text
+    assert ".mcp.json" in text
+    assert ".cursor/mcp.json" in text
+    assert ".vscode/mcp.json" in text
+    assert "claude_desktop_config.json" in text
+    assert ".claude/settings.json" in text
+    assert "pi-mcp-adapter" in text
+    assert '"servers"' in text
+    assert "dowse doctor" in text
+    assert "dowse query" in text
