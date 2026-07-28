@@ -33,6 +33,13 @@ jobs:
       - name: Run pytest
         run: pytest -q
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Run pi extension tests
+        run: node --test "skills/dowse-cli/*.test.ts"
+
   build:
     name: Build distributions
     needs: test

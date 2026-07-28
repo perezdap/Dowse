@@ -126,6 +126,21 @@ function parseHookPayload(stdout: string): HookPayload | null {
 	}
 }
 
+const MAX_FAILURE_DETAIL = 200;
+
+// `reason` alone ("index_failed") is not actionable; prefer the underlying
+// exception text when the hook provides it, clipped so notifications stay readable.
+// `detail` arrives from subprocess JSON: type-check it so a malformed payload
+// degrades to the reason fallback instead of throwing (fail-open contract).
+export function failureMessage(payload: { reason: string; detail?: string }): string {
+	const raw = typeof payload.detail === "string" ? payload.detail : "";
+	const detail = raw.replace(/\s+/g, " ").trim();
+	if (!detail) return `dowse index failed: ${payload.reason}`;
+	const clipped =
+		detail.length > MAX_FAILURE_DETAIL ? `${detail.slice(0, MAX_FAILURE_DETAIL - 1)}…` : detail;
+	return `dowse index failed: ${clipped}`;
+}
+
 export default function (pi: ExtensionAPI): void {
 	pi.on("session_start", async (event, ctx) => {
 		// reload/new/resume/fork/startup all warrant a freshness check; it's a
@@ -167,7 +182,7 @@ export default function (pi: ExtensionAPI): void {
 		if (payload?.status === "ok" && payload.indexed_symbols > 0) {
 			ctx.ui.notify(`dowse: ${payload.indexed_symbols} symbols indexed`, "info");
 		} else if (payload?.status === "error") {
-			ctx.ui.notify(`dowse index failed: ${payload.reason}`, "warning");
+			ctx.ui.notify(failureMessage(payload), "warning");
 		}
 	});
 }
