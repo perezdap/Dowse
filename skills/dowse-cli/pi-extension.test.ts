@@ -37,8 +37,9 @@ async function runSessionStart(payload: unknown): Promise<Notification[]> {
 
 	const bin = mkdtempSync(join(tmpdir(), "dowse-ext-bin-"));
 	tempDirs.push(bin);
+	// mode is ignored on Windows; on POSIX it makes X_OK pass in resolveFromPath.
 	const fakeName = process.platform === "win32" ? "dowse.cmd" : "dowse";
-	writeFileSync(join(bin, fakeName), "");
+	writeFileSync(join(bin, fakeName), "", { mode: 0o755 });
 
 	const notifications: Notification[] = [];
 	let handler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
@@ -85,6 +86,11 @@ test("error payload without detail falls back to reason", { concurrency: false }
 	assert.deepEqual(notifications, [{ message: "dowse index failed: index_failed", level: "warning" }]);
 });
 
+test("error payload with non-string detail falls back to reason", { concurrency: false }, async () => {
+	const notifications = await runSessionStart({ status: "error", reason: "index_failed", detail: 123 });
+	assert.deepEqual(notifications, [{ message: "dowse index failed: index_failed", level: "warning" }]);
+});
+
 test("skipped outcomes stay silent", { concurrency: false }, async () => {
 	for (const reason of ["index_fresh", "no_opted_in_workspace"]) {
 		assert.deepEqual(await runSessionStart({ status: "skipped", reason }), []);
@@ -120,4 +126,7 @@ test("failureMessage clips long details and collapses whitespace", () => {
 	assert.equal(multiline, "dowse index failed: line one line two");
 
 	assert.equal(failureMessage({ reason: "index_failed", detail: "   " }), "dowse index failed: index_failed");
+
+	const nonString = failureMessage({ reason: "index_failed", detail: 123 as unknown as string });
+	assert.equal(nonString, "dowse index failed: index_failed");
 });

@@ -11,14 +11,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Pi session extension failure warnings:** `pi-extension.ts` now surfaces the
   hook's `detail` (the underlying indexing exception) in the "dowse index
   failed" notification instead of the opaque `index_failed` reason, falling
-  back to `reason` when `detail` is absent and clipping long details so the
-  notification stays readable.
+  back to `reason` when `detail` is absent, non-string, or blank, and clipping
+  long details so the notification stays readable.
 
 ### Tested
 - Node `node:test` regression suite for the Pi extension's session-start
   notifications (`skills/dowse-cli/pi-extension.test.ts`, run with
   `node --test "skills/dowse-cli/*.test.ts"`), covering error-detail fallback,
-  skipped/success behavior, and detail clipping.
+  malformed payloads, skipped/success behavior, and detail clipping. Runs in
+  the CI and Release workflows alongside ruff and pytest.
 
 ## [0.2.6] - 2026-07-01
 
