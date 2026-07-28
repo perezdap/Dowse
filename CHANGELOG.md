@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-07-28
+
 ### Fixed
 - **Pi session extension failure warnings:** `pi-extension.ts` now surfaces the
   hook's `detail` (the underlying indexing exception) in the "dowse index
