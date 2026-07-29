@@ -82,7 +82,7 @@ A couple of zvec specifics worth knowing, since they're easy to get wrong:
 
 ## The indexing loop
 
-`dowse index` walks the directory (skipping `.git`, `.dowse_index`, `node_modules`, `__pycache__`, virtualenvs, build dirs — but only *below* the root, so a project living under a path like `.../build/...` still indexes), and for each supported file:
+`dowse index` walks the directory (skipping `.git`, `.dowse_index`, `node_modules`, `__pycache__`, virtualenvs, build dirs — but only *below* the root, so a project living under a path like `.../build/...` still indexes), drops paths matched by `.gitignore` (via `git check-ignore`) and an optional `.dowseignore`, skips agent-instruction files (`AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `copilot-instructions.md`, `.cursorrules`), and for each supported file:
 
 1. Parse once with tree-sitter; collect every `function_definition` / `class_definition` node. Names are qualified by walking enclosing definitions (so a method reads as `Class.method`).
 2. Embed each symbol as `"{kind} {qualified_name}\n{body}"` (body capped at ~2k chars).
@@ -305,6 +305,27 @@ dowse query "custom GenerateVersion build target" --db ./.dowse_index --kind sec
 - **.NET/MSBuild XML** (`.csproj`, `.props`, `.targets`): `PropertyGroup`, `ItemGroup`, `ItemDefinitionGroup`, and `Target` blocks become sections, qualified by the file name and useful child names — e.g. `App.PropertyGroup.TargetFramework.Nullable`, `App.ItemGroup.PackageReference.Microsoft Extensions Logging.ProjectReference.Shared`, `Custom.Target.GenerateVersion.Message.WriteLinesToFile`.
 
 These extractors are pure-stdlib (no PyYAML, no Markdown parser, no MSBuild SDK): they scan regular structure and use Python's built-in XML parser where useful, which is more forgiving of half-finished files than a strict project-system dependency. The flag is **opt-in** so a normal code index doesn't slurp every `README.md`, CI YAML, or project metadata file in the repo. The sections land in the same collection with `kind` set to `section` and `language` set to `yaml`, `markdown`, or `msbuild`, so you can filter them with `--lang msbuild` or `--kind section`. To add other declarative formats, drop an extractor into `definitions.py` and register its extension.
+
+## Excluding files from the index
+
+`walk_directory` (shared by `index`, staleness checks, and language coverage) filters candidates through four subtractive layers, in order — a later layer can never re-include a path an earlier layer dropped:
+
+1. **Hardcoded skip set** — any path segment *below* the root named `.git`, `.dowse_index`, `node_modules`, `__pycache__`, a virtualenv (`.venv`/`venv`), `.mypy_cache`/`.pytest_cache`, or a build dir (`dist`, `build`, `.tox`). A project living under `.../build/...` still indexes, because only segments below the root count.
+2. **Agent-instruction files** — `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `copilot-instructions.md`, `.cursorrules` are skipped even under `--definitions` (they're for AI agents, not code context).
+3. **`.gitignore`** — candidates are filtered through `git check-ignore`, so anything ignored by `.gitignore`, `.git/info/exclude`, or a global excludes file is dropped. Fails open (indexes everything) when git is unavailable or the tree isn't a work tree. **Caveat:** `git check-ignore` does not report *tracked* files, so a committed file matching a `.gitignore` pattern is still indexed.
+4. **`.dowseignore`** (opt-in) — a gitignore-syntax file at the repo root that closes the tracked-file gap above and any "exclude from dowse without touching `.gitignore`" need. Read once and cached by mtime. Gitignore globs:
+
+   ```gitignore
+   knowledge/          # any dir named knowledge, at any depth
+   /knowledge/         # only the top-level knowledge dir
+   docs/drafts/        # anchored: only docs/drafts
+   *.generated.py      # filename glob
+   !keep.py            # negation rescues from an earlier .dowseignore match
+   ```
+
+   Negation applies *within* `.dowseignore` only — it cannot rescue a path dropped by layers 1–3.
+
+`dowse init` does not create a `.dowseignore`; add one when you need it.
 
 ## Language support
 

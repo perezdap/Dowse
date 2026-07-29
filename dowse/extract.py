@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 from typing import Callable, Iterable
 
+import pathspec
 from tree_sitter import Language, Parser
 
 from .definitions import DEFINITION_EXTRACTORS, definition_extensions, definition_languages
@@ -374,13 +375,48 @@ def _git_ignored_relpaths(root: Path, relpaths: list[str]) -> set[str]:
     return {p.replace("\\", "/") for p in proc.stdout.split("\0") if p}
 
 
+# Cache .dowseignore parses by (resolved root, mtime_ns) so the staleness walk
+# (which calls walk_directory on every status check) does not re-read the file
+# each call. A None entry is a negative cache: no file at that path/mtime.
+_DOWSEIGNORE_CACHE: dict[tuple[Path, int], pathspec.PathSpec | None] = {}
+
+
+def _load_dowseignore(root: Path) -> pathspec.PathSpec | None:
+    """Return a cached PathSpec for ``<root>/.dowseignore``, or None if absent.
+
+    Re-reads only when the file's mtime changes. Purely subtractive: callers
+    use matches to drop candidates, never to re-include anything skipped by
+    the hardcoded skip set, the agent-doc blocklist, or git ignore. Gitignore
+    syntax: a bare ``knowledge/`` matches at any depth; ``/knowledge/`` is
+    anchored to the index root.
+    """
+    path = root / ".dowseignore"
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        return None
+    key = (root, mtime)
+    cached = _DOWSEIGNORE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        spec = pathspec.PathSpec.from_lines("gitignore", text.splitlines())
+    except OSError:
+        spec = None
+    _DOWSEIGNORE_CACHE[key] = spec
+    return spec
+
+
 def walk_directory(root: Path, ignore: Iterable[str] = (), exts: set[str] | None = None) -> Iterable[Path]:
-    """Yield candidate source files, skipping common noise, agent docs, and gitignored paths."""
+    """Yield candidate source files, skipping common noise, agent docs,
+    ``.dowseignore`` patterns, and gitignored paths."""
     skip = {".git", ".venv", "venv", "node_modules", "__pycache__",
             ".mypy_cache", ".pytest_cache", ".dowse_index", "dist", "build", ".tox", *ignore}
     if exts is None:
         exts = supported_extensions()
     root = root.resolve()
+    dowseignore = _load_dowseignore(root)
 
     candidates: list[tuple[str, Path]] = []
     for p in root.rglob("*"):
@@ -396,7 +432,15 @@ def walk_directory(root: Path, ignore: Iterable[str] = (), exts: set[str] | None
         if p.suffix.lower() in exts:
             candidates.append((p.relative_to(root).as_posix(), p))
 
-    ignored = _git_ignored_relpaths(root, [rel for rel, _ in candidates])
+    rels = [rel for rel, _ in candidates]
+    ignored = _git_ignored_relpaths(root, rels)
+    # .dowseignore is purely subtractive: it can exclude tracked files that git
+    # ignore cannot reach (a tracked file matching a .gitignore pattern is not
+    # reported by `git check-ignore`), but it can never re-include a path
+    # already dropped by the hardcoded skip set, the agent-doc blocklist, or
+    # git ignore.
+    if dowseignore is not None:
+        ignored |= set(dowseignore.match_files(rels))
     for rel, p in candidates:
         if rel not in ignored:
             yield p

@@ -5,6 +5,10 @@ zvec>=0.5.0                  # embedded vector DB (Apache-2.0). Ships Windows x8
 sentence-transformers>=2.7   # local embeddings; pulls torch (CPU build is fine)
 typer>=0.12                  # CLI
 
+# .dowseignore parsing (gitignore-style globs); used by walk_directory to drop
+# tracked files that .gitignore cannot reach once they're committed.
+pathspec>=0.10
+
 # tree-sitter core + grammars. Each grammar wheel bundles a compiled parser,
 # so nothing is downloaded at runtime (important for offline / Windows use).
 # NOTE: do NOT use tree-sitter-language-pack — it fetches grammars from GitHub
