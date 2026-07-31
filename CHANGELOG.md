@@ -7,6 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **`.dowseignore`:** an opt-in, gitignore-syntax file at the repo root that
+  excludes paths from the index. It is purely subtractive and applied in
+  `walk_directory` (shared by `index`, staleness checks, and language
+  coverage), so every walk honors it. It closes the gap `git check-ignore`
+  cannot: a tracked file matching a `.gitignore` pattern is not reported as
+  ignored, so dowse's gitignore pass keeps it — `.dowseignore` lets you drop
+  such paths (and any tracked, non-gitignored tree) without editing
+  `.gitignore`. Patterns use gitignore globs: bare `knowledge/` matches at
+  any depth, `/knowledge/` is anchored to the index root; negation (`!`)
+  applies within `.dowseignore` only and cannot rescue a path dropped by the
+  hardcoded skip set, the agent-doc blocklist, or git ignore. Requires the
+  new `pathspec` dependency.
+
 ## [0.2.7] - 2026-07-28
 
 ### Fixed
