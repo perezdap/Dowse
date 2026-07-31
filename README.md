@@ -15,7 +15,7 @@ dowse/
   store.py        # zvec schema, idempotent indexing, hybrid query
   service.py      # core index/query logic (one impl, shared)
   cli.py          # Typer CLI: `index`, `query`, `status`, `doctor`, `init`, `hook`, `serve`
-  server.py       # MCP (FastMCP) stdio server wrapping the same logic
+  server.py       # MCP (MCPServer) stdio server wrapping the same logic
 requirements.txt
 pyproject.toml    # PyPI `dowse-context`; CLI entrypoint `dowse`; extras: [mcp], [go], ...
 ```
@@ -281,7 +281,7 @@ Register it with a harness by pointing at the command. For Claude Code / Claude 
 }
 ```
 
-This deliberately uses the FastMCP class bundled with the official `mcp` SDK rather than the standalone `fastmcp` package — the latter's v3 line rebuilt its architecture and auth model in early 2026, and for a local two-tool stdio server the bundled one is the stable, lower-churn choice.
+This deliberately uses `MCPServer`, the high-level server class bundled with the official `mcp` SDK (renamed from `FastMCP` in SDK 2.0.0), rather than the standalone `fastmcp` package — the latter's v3 line rebuilt its architecture and auth model in early 2026, and for a local two-tool stdio server the bundled one is the stable, lower-churn choice.
 
 ## Local/offline behavior
 
