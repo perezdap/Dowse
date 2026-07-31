@@ -1,9 +1,10 @@
 """MCP server exposing the Context Engine to a coding harness over stdio.
 
-Uses the FastMCP class bundled with the official `mcp` Python SDK (stable for
-local stdio servers; the standalone `fastmcp` v3 line rebuilt its architecture
-and auth model in early 2026). Both tools delegate to `service.py`, so the MCP
-surface and the CLI run identical logic.
+Uses `MCPServer`, the high-level server class in the official `mcp` Python SDK
+(renamed from `FastMCP` in SDK 2.0.0, released 2026-07-28; the standalone
+`fastmcp` v3 line rebuilt its architecture and auth model in early 2026 and is a
+different project). Both tools delegate to `service.py`, so the MCP surface and
+the CLI run identical logic.
 
 Launch via `dowse serve`, or point a harness straight at:
     command = "dowse", args = ["serve", "--db", "./.dowse_index"]
@@ -13,14 +14,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from . import service
 from .embed import DEFAULT_MODEL
 
 
-def build_server(default_db: str = "./.dowse_index", default_model: str = DEFAULT_MODEL) -> FastMCP:
-    mcp = FastMCP("dowse")
+def build_server(default_db: str = "./.dowse_index", default_model: str = DEFAULT_MODEL) -> MCPServer:
+    mcp = MCPServer("dowse")
 
     @mcp.tool()
     def query_context(

@@ -22,18 +22,16 @@ def _build_server():
 
 
 async def _call_tool_json(mcp, name: str, arguments: dict):
+    """Call an MCP tool and return the JSON payload it produced.
+
+    `MCPServer.call_tool` (mcp 2.0) returns a `CallToolResult`; the tool's
+    structured return is JSON-serialised into one `TextContent` block per
+    top-level item (one block for a dict, one block per element for a list),
+    so we parse those blocks back into Python to assert on the payload.
+    """
     result = await mcp.call_tool(name, arguments)
-    if isinstance(result, dict):
-        return result
-    if isinstance(result, tuple) and len(result) == 2:
-        content, metadata = result
-        if isinstance(metadata, dict) and "result" in metadata:
-            return metadata["result"]
-        result = content
-    if isinstance(result, list) and result and hasattr(result[0], "text"):
-        values = [json.loads(item.text) for item in result]
-        return values[0] if len(values) == 1 else values
-    return result
+    values = [json.loads(block.text) for block in result.content if hasattr(block, "text")]
+    return values[0] if len(values) == 1 else values
 
 
 def test_mcp_index_status_tool(sample_repo: Path) -> None:

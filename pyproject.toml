@@ -39,7 +39,7 @@ Issues = "https://github.com/perezdap/dowse/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "tree-sitter-rust>=0.24", "tree-sitter-bash>=0.25", "tree-sitter-typescript>=0.23", "ruff>=0.6"]
-mcp = ["mcp>=1.27"]
+mcp = ["mcp>=2.0"]
 javascript = ["tree-sitter-javascript>=0.23"]
 typescript = ["tree-sitter-typescript>=0.23"]
 go = ["tree-sitter-go>=0.25"]
