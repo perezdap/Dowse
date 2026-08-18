@@ -124,3 +124,19 @@ def test_dowse_harness_setup_skill_covers_common_harnesses() -> None:
     assert '"servers"' in text
     assert "dowse doctor" in text
     assert "dowse query" in text
+
+
+def test_harness_setup_skill_points_windsurf_at_mcp_config_json() -> None:
+    skill = ROOT / "skills" / "dowse-harness-setup" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    assert ".codeium/windsurf/mcp_config.json" in text
+    assert ".windsurf/mcp.json" not in text
+
+
+def test_harness_setup_skill_uses_portable_vscode_db_path() -> None:
+    skill = ROOT / "skills" / "dowse-harness-setup" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    assert "${workspaceFolder}/.dowse_index" in text
+    assert r"${workspaceFolder}\\.dowse_index" not in text

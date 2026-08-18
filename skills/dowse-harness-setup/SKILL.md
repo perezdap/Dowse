@@ -78,7 +78,7 @@ For repo-local configs, relative `".dowse_index"` is fine and is better for sepa
 | VS Code with Copilot | `.vscode/mcp.json` | `servers` | Root key differs. Also enable MCP in VS Code settings if needed. |
 | Claude Desktop | `%APPDATA%\Claude\claude_desktop_config.json` | `mcpServers` | Use absolute paths. Restart Claude Desktop. |
 | Claude Code | `claude mcp add` or `.claude/settings.json` | `mcpServers` | Prefer the CLI for current installs. Project file support depends on version. |
-| Windsurf | `.windsurf/mcp.json` or `~/.windsurf/mcp.json` | `mcpServers` | Same basic shape as Cursor. |
+| Windsurf | `%USERPROFILE%\.codeium\windsurf\mcp_config.json` | `mcpServers` | Global file (`~/.codeium/windsurf/mcp_config.json` on Unix). Use an absolute `--db` path. |
 | ChatGPT | app/connectors UI | n/a | Does not read local MCP JSON files. Usually needs a remote connector URL. |
 | Unknown harness | check docs first | varies | Do not copy `.mcp.json` blindly. Confirm path and root key. |
 
@@ -142,7 +142,7 @@ Create or merge `.vscode/mcp.json`. VS Code uses `"servers"`, not `"mcpServers"`
   "servers": {
     "dowse": {
       "command": "dowse",
-      "args": ["serve", "--db", "${workspaceFolder}\\.dowse_index"]
+      "args": ["serve", "--db", "${workspaceFolder}/.dowse_index"]
     }
   }
 }
@@ -180,20 +180,20 @@ For project-local config, use `.claude/settings.json` only after checking the in
 
 ## Windsurf setup
 
-Create or merge `.windsurf/mcp.json` for the project, or `~/.windsurf/mcp.json` globally:
+Edit `%USERPROFILE%\.codeium\windsurf\mcp_config.json` on Windows (`~/.codeium/windsurf/mcp_config.json` on macOS/Linux). Windsurf does not read a project-level MCP JSON file.
 
 ```json
 {
   "mcpServers": {
     "dowse": {
       "command": "dowse",
-      "args": ["serve", "--db", ".dowse_index"]
+      "args": ["serve", "--db", "C:\\path\\to\\repo\\.dowse_index"]
     }
   }
 }
 ```
 
-Reload Windsurf after editing.
+Use an absolute `--db` path so the server does not depend on launch directory. Reload Windsurf after editing.
 
 ## Verification checklist
 
