@@ -1,12 +1,18 @@
 """Packaging metadata and install docs for release readiness (issue #13)."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
+from typer.testing import CliRunner
+
 import dowse
+import dowse.cli as cli
 
 ROOT = Path(__file__).resolve().parents[1]
+
+runner = CliRunner()
 
 
 def test_pyproject_includes_release_metadata() -> None:
@@ -35,6 +41,13 @@ def test_import_package_version_matches_project_version() -> None:
 
     assert match is not None
     assert dowse.__version__ == match.group(1)
+
+
+def test_cli_version_flag_emits_json_and_exits_zero() -> None:
+    r = runner.invoke(cli.app, ["--version"])
+
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert json.loads(r.stdout) == {"dowse": dowse.__version__}
 
 
 def test_readme_separates_user_and_development_installs() -> None:
@@ -108,3 +121,35 @@ def test_docs_do_not_repeat_distribution_name() -> None:
 
     for path in checked:
         assert "dowse-context-context" not in path.read_text(encoding="utf-8")
+
+
+def test_dowse_harness_setup_skill_covers_common_harnesses() -> None:
+    skill = ROOT / "skills" / "dowse-harness-setup" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    assert "name: dowse-harness-setup" in text
+    assert ".mcp.json" in text
+    assert ".cursor/mcp.json" in text
+    assert ".vscode/mcp.json" in text
+    assert "claude_desktop_config.json" in text
+    assert ".claude/settings.json" in text
+    assert "pi-mcp-adapter" in text
+    assert '"servers"' in text
+    assert "dowse doctor" in text
+    assert "dowse query" in text
+
+
+def test_harness_setup_skill_points_windsurf_at_mcp_config_json() -> None:
+    skill = ROOT / "skills" / "dowse-harness-setup" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    assert ".codeium/windsurf/mcp_config.json" in text
+    assert ".windsurf/mcp.json" not in text
+
+
+def test_harness_setup_skill_uses_portable_vscode_db_path() -> None:
+    skill = ROOT / "skills" / "dowse-harness-setup" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    assert "${workspaceFolder}/.dowse_index" in text
+    assert r"${workspaceFolder}\\.dowse_index" not in text

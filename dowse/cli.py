@@ -23,6 +23,7 @@ from typing import Optional
 import typer
 
 from .embed import DEFAULT_MODEL
+from . import __version__
 from . import bootstrap
 from . import cursor_hooks
 from . import service
@@ -47,6 +48,25 @@ def _emit(payload) -> None:
     json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write("\n")
     sys.stdout.flush()
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        _emit({"dowse": __version__})
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Print version as JSON and exit.",
+    ),
+) -> None:
+    """Local code Context Engine (tree-sitter + zvec)."""
 
 
 def _locked_index_exit(exc: LockedIndexError) -> None:

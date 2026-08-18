@@ -20,6 +20,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   applies within `.dowseignore` only and cannot rescue a path dropped by the
   hardcoded skip set, the agent-doc blocklist, or git ignore. Requires the
   new `pathspec` dependency.
+- **`dowse --version`:** prints `{"dowse": "<version>"}` to stdout and exits 0,
+  so scripts and support workflows can check which install is on PATH without
+  running the full `dowse doctor` diagnostics.
 
 ## [0.2.7] - 2026-07-28
 
