@@ -27,4 +27,4 @@ venv/
 .vscode/
 
 # Machine-local junctions into .agents/skills (recreated per machine)
-.claude/
+.claude/skills/

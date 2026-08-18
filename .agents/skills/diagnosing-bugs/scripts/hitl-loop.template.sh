@@ -1,19 +1,6 @@
 #!/usr/bin/env bash
-# Human-in-the-loop reproduction loop.
-# Copy this file, edit the steps below, and run it.
-# The agent runs the script; the user follows prompts in their terminal.
-#
-# Usage:
-#   bash hitl-loop.template.sh
-#
-# Two helpers:
-#   step "<instruction>"          → show instruction, wait for Enter
-#   capture VAR "<question>"      → show question, read response into VAR
-#
-# At the end, captured values are printed as KEY=VALUE for the agent to parse.
-#
-# `capture` prints its value back to the terminal, where the agent reads it — so
-# capture observations, and leave signing in to the user as a `step`.
+# Usage: bash hitl-loop.template.sh
+# Capture observations only; credentials stay with the human performing a step.
 
 set -euo pipefail
 
@@ -29,15 +16,13 @@ capture() {
   printf -v "$var" '%s' "$answer"
 }
 
-# --- edit below ---------------------------------------------------------
+# Replace this scenario with the minimal reproduction.
 
 step "Open the app at http://localhost:3000 and sign in."
 
 capture ERRORED "Click the 'Export' button. Did it throw an error? (y/n)"
 
 capture ERROR_MSG "Paste the error message (or 'none'):"
-
-# --- edit above ---------------------------------------------------------
 
 printf '\n--- Captured ---\n'
 printf 'ERRORED=%s\n' "$ERRORED"

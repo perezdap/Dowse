@@ -4,4 +4,8 @@ description: A relentless interview to sharpen a plan or design, which also crea
 disable-model-invocation: true
 ---
 
-Call the Skill tool twice, for "grilling" and "domain-modeling".
+Run the "grilling" workflow and keep the domain model current as decisions
+settle. Use the "domain-modeling" workflow to update established vocabulary in
+`CONTEXT.md` during the interview. Offer an ADR only for a durable architectural
+decision whose rationale future contributors will need, and ask before creating
+it.
