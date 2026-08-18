@@ -26,3 +26,6 @@ venv/
 .idea/
 .vscode/
 .cursor/mcp.json
+
+# Machine-local junctions into .agents/skills (recreated per machine)
+.claude/skills/
