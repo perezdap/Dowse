@@ -40,14 +40,12 @@ class LockedIndexError(RuntimeError):
 def _is_lock_error(exc: BaseException) -> bool:
     # zvec phrases the lock refusal per mode: "Can't lock read-write collection"
     # when a writer is blocked, "Can't lock read-only collection" when a reader
-    # is blocked by an active writer. Both mean "another handle owns it".
+    # is blocked by an active writer. Both mean "another handle owns it" — and
+    # they're the only phrases that do: "create id map failed" fires after the
+    # lock is already held (corruption, not contention), while "lock hold by"
+    # and "No locks available" never come from zvec's lock path at all.
     msg = str(exc)
-    return (
-        ("Can't lock" in msg and "collection" in msg)
-        or "lock hold by" in msg
-        or "No locks available" in msg
-        or "create id map failed" in msg
-    )
+    return "Can't lock" in msg and "collection" in msg
 
 
 def _sql_str(value: str) -> str:

@@ -16,7 +16,7 @@ import dowse.bootstrap as bootstrap
 import dowse.service as service
 from conftest import _symbol_docs, _symbol_names
 from dowse.server_lock import acquire_server_lock
-from dowse.store import Store
+from dowse.store import LockedIndexError, Store
 
 runner = CliRunner()
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]")
@@ -242,6 +242,31 @@ def test_cli_query_reports_locked_index_without_traceback(sample_repo: Path, db_
     assert "index is already open" in r.stderr
     assert "dowse serve" in r.stderr
     assert "Traceback" not in r.stderr
+
+
+def test_store_create_propagates_non_lock_zvec_errors(tmp_path: Path, monkeypatch) -> None:
+    """zvec init failures that aren't lock refusals must not masquerade as a locked index.
+
+    zvec raises "create id map failed" only after the collection lock is already
+    held (disk/mmap/corruption), so translating it to LockedIndexError would
+    hide real corruption behind "wait for the other process".
+    """
+    def fail_create(*_args, **_kwargs):
+        raise RuntimeError("create id map failed, path: /idx/0.idmap")
+
+    monkeypatch.setattr(zvec, "create_and_open", fail_create)
+    with pytest.raises(RuntimeError, match="create id map failed"):
+        Store.create(tmp_path / "idx", dimension=8)
+
+
+def test_store_open_readonly_maps_lock_refusal_to_locked_index(tmp_path: Path, monkeypatch) -> None:
+    """A genuine zvec lock refusal still surfaces as LockedIndexError."""
+    def fail_open(*_args, **_kwargs):
+        raise RuntimeError("Can't lock read-only collection: /idx/LOCK")
+
+    monkeypatch.setattr(zvec, "open", fail_open)
+    with pytest.raises(LockedIndexError):
+        Store.open_readonly(tmp_path / "idx")
 
 
 def test_cli_reset_reports_locked_index_without_traceback(sample_repo: Path, db_path: Path) -> None:
