@@ -1,12 +1,18 @@
 """Packaging metadata and install docs for release readiness (issue #13)."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
+from typer.testing import CliRunner
+
 import dowse
+import dowse.cli as cli
 
 ROOT = Path(__file__).resolve().parents[1]
+
+runner = CliRunner()
 
 
 def test_pyproject_includes_release_metadata() -> None:
@@ -35,6 +41,13 @@ def test_import_package_version_matches_project_version() -> None:
 
     assert match is not None
     assert dowse.__version__ == match.group(1)
+
+
+def test_cli_version_flag_emits_json_and_exits_zero() -> None:
+    r = runner.invoke(cli.app, ["--version"])
+
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert json.loads(r.stdout) == {"dowse": dowse.__version__}
 
 
 def test_readme_separates_user_and_development_installs() -> None:
