@@ -11,8 +11,10 @@ import json
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 import dowse.service as service
+from dowse._dist import pip_extra_hint
 
 
 def _build_server():
@@ -105,3 +107,34 @@ def test_mcp_server_registers_all_three_tools(sample_repo: Path) -> None:
 
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert names == {"query_context", "index_codebase", "index_status"}
+
+
+def test_serve_reports_install_hint_when_mcp_is_too_old(tmp_path: Path, monkeypatch) -> None:
+    """An mcp older than 2.0 gets the install hint, not a raw traceback.
+
+    SDK 1.x ships `mcp.server` but no `MCPServer` in it, so `dowse.server`'s
+    import raises plain `ImportError` rather than `ModuleNotFoundError`. The
+    guard in `cli.serve` has to catch the parent class or the upgrade this
+    release forces surfaces as an unhandled traceback.
+    """
+    import sys
+    import types
+
+    import dowse.cli as cli
+
+    stub = types.ModuleType("mcp")
+    stub.__path__ = []
+    server_mod = types.ModuleType("mcp.server")  # deliberately has no MCPServer
+    stub.server = server_mod
+    monkeypatch.setitem(sys.modules, "mcp", stub)
+    monkeypatch.setitem(sys.modules, "mcp.server", server_mod)
+    monkeypatch.delitem(sys.modules, "dowse.server", raising=False)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["serve", "--db", str(tmp_path / ".dowse_index")])
+
+    assert result.exit_code == 1
+    output = result.stdout + result.stderr
+    assert "missing dependency" in output
+    assert "MCPServer" in output
+    assert pip_extra_hint("mcp") in output

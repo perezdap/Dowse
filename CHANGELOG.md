@@ -5,7 +5,7 @@ All notable changes to **dowse** are documented here. Dates are in UTC.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-18
 
 ### Added
 - **`.dowseignore`:** an opt-in, gitignore-syntax file at the repo root that
@@ -23,6 +23,37 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **`dowse --version`:** prints `{"dowse": "<version>"}` to stdout and exits 0,
   so scripts and support workflows can check which install is on PATH without
   running the full `dowse doctor` diagnostics.
+
+### Changed
+- **`dowse serve` now requires `mcp>=2.0` (breaking).** SDK 2.0.0 (released
+  2026-07-28) removed the `mcp.server.fastmcp` module and renamed `FastMCP` to
+  `MCPServer` under `mcp.server`, so `build_server` imports and returns
+  `MCPServer`. The `mcp` optional extra moved from `mcp>=1.27` to `mcp>=2.0` in
+  both `pyproject.toml` and `requirements.txt`. If you installed the extra
+  before this release, upgrade it — `pip install -U "dowse-context[mcp]"`; left
+  on 1.x, `dowse serve` exits 1 with the install hint (see below). Nothing else
+  changes: the exposed tools, their arguments, and their JSON payloads are
+  identical, and `service.py` was untouched. Note that the standalone `fastmcp`
+  package is a different project and is still not used.
+
+### Fixed
+- **`dowse serve` install hint on an outdated SDK:** the missing-dependency
+  guard in `cli.serve` caught only `ModuleNotFoundError`, so it handled "mcp
+  isn't installed" but not "mcp is installed and too old" — 1.x ships the
+  `mcp.server` module without `MCPServer` in it, which raises the parent
+  `ImportError`. That escaped the guard and printed a raw traceback on exactly
+  the upgrade this release requires. The guard now catches `ImportError`, so
+  both cases exit 1 with `[serve] missing dependency: ... Install with: pip
+  install "dowse-context[mcp]"`.
+
+### Tested
+- `tests/test_mcp.py` asserts against the SDK 2.0 return shape directly.
+  `MCPServer.call_tool` returns a `CallToolResult`, so the helper parses the
+  `TextContent` blocks off `result.content` instead of branching over the dict
+  / tuple / list shapes the 1.x line could return.
+- A regression test stubs an `mcp.server` without `MCPServer` (the 1.x shape)
+  and asserts `dowse serve` exits 1 with the install hint. It fails against the
+  old `ModuleNotFoundError` guard.
 
 ## [0.2.7] - 2026-07-28
 

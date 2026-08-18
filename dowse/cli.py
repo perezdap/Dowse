@@ -300,7 +300,10 @@ def serve(
         _probe_serve_index(db)
         try:
             from .server import build_server
-        except ModuleNotFoundError as exc:  # mcp not installed
+        # ImportError, not ModuleNotFoundError: an mcp older than 2.0 has the
+        # `mcp.server` module but no `MCPServer` in it, which raises the parent
+        # class. Both cases mean "install/upgrade the extra", so catch both.
+        except ImportError as exc:
             from ._dist import pip_extra_hint
 
             _err(f"[serve] missing dependency: {exc}. Install with: {pip_extra_hint('mcp')}")
