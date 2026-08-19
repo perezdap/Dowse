@@ -322,6 +322,34 @@ def _db_mtime(db: Path) -> float | None:
     return max(mtimes)
 
 
+def _unopened_index_status(
+    db_path: Path,
+    root: str | Path | None,
+    *,
+    exists: bool,
+    error: str | None = None,
+) -> dict:
+    """The index-status shape for a collection we never got to read.
+
+    One shape for both reasons a read can't happen — there is no index yet, or
+    there is one we couldn't open — so callers parse a single contract. Counts
+    are 0 only when there is genuinely nothing indexed; for an index that exists
+    but wouldn't open they are None, because unknown is not the same as empty.
+    """
+    return {
+        "exists": exists,
+        "db_path": str(db_path),
+        "indexed_files": None if exists else 0,
+        "indexed_symbols": None if exists else 0,
+        "dimension": None,
+        "languages": [],
+        "last_indexed_at": None,
+        "stale": None,
+        "missing_grammars": _missing_grammars_for(root) if root else [],
+        "error": error,
+    }
+
+
 def run_index_status(
     db: str | Path = "./.dowse_index",
     root: str | Path | None = None,
@@ -332,23 +360,28 @@ def run_index_status(
     two extra signals: `missing_grammars` (files on disk whose grammar wheel is
     not installed) and `stale` (a source file newer than the index). Both are
     best-effort heuristics; `stale` is None when there is no root to compare.
+
+    An index zvec can't read at all (id-map corruption, a disk/mmap failure) is
+    reported in `error` rather than raised: describing a broken index is the
+    whole point of asking for its status. Contention still raises
+    LockedIndexError, because waiting for the other handle is a different answer
+    than "this index is damaged".
     """
     db_path = Path(db)
     exists = db_path.exists() and any(db_path.iterdir())
 
     if not exists:
-        return {
-            "exists": False,
-            "db_path": str(db_path),
-            "indexed_files": 0,
-            "indexed_symbols": 0,
-            "dimension": None,
-            "languages": [],
-            "last_indexed_at": None,
-            "stale": None,
-            "missing_grammars": _missing_grammars_for(root) if root else [],
-        }
+        return _unopened_index_status(db_path, root, exists=False)
 
+    try:
+        return _read_index_status(db_path, root)
+    except LockedIndexError:
+        raise
+    except RuntimeError as exc:
+        return _unopened_index_status(db_path, root, exists=True, error=str(exc))
+
+
+def _read_index_status(db_path: Path, root: str | Path | None) -> dict:
     # Even though this is read-only, zvec's Python binding isn't thread-safe for
     # concurrent in-process handles, so serialize to avoid binding-level errors.
     with _index_lock(db_path):
@@ -390,6 +423,7 @@ def run_index_status(
         "last_indexed_at": last_indexed,
         "stale": stale,
         "missing_grammars": _missing_grammars_for(root) if root else [],
+        "error": None,
     }
 
 
@@ -520,14 +554,19 @@ def _dowse_install_info() -> dict:
 
 def _probe_index_access(db: Path) -> dict:
     if not db.exists() or not any(db.iterdir()):
-        return {"readable": False, "locked": False}
+        return {"readable": False, "locked": False, "error": None}
     try:
         with _index_lock(db):
             store = Store.open_readonly(db)
             del store
-        return {"readable": True, "locked": False}
+        return {"readable": True, "locked": False, "error": None}
     except LockedIndexError:
-        return {"readable": False, "locked": True}
+        return {"readable": False, "locked": True, "error": None}
+    except RuntimeError as exc:
+        # Not contention: id-map corruption, a disk/mmap failure, a schema zvec
+        # can't read. Report it — diagnosing this is what doctor is for, so it
+        # must not be the one command that dies on a broken index.
+        return {"readable": False, "locked": False, "error": str(exc)}
 
 
 def _mcp_config_has_dowse(data: dict) -> bool:
@@ -570,7 +609,15 @@ def run_doctor(
     root_path = Path(root).resolve() if root else Path.cwd().resolve()
     db_path = Path(db).resolve() if db else root_path / ".dowse_index"
 
-    index_status = run_index_status(db=db_path, root=root_path)
+    try:
+        index_status = run_index_status(db=db_path, root=root_path)
+    except LockedIndexError:
+        # A live writer owns the collection, so the index's contents are simply
+        # unknown right now — not damaged. Deliberately no `error`: contention is
+        # reported as `locks.index.locked` below, and putting the lock message
+        # here would read as a broken index. Unreadable indexes never reach this
+        # handler; run_index_status reports those in `error` itself.
+        index_status = _unopened_index_status(db_path, root_path, exists=True)
 
     return {
         "status": "ok",

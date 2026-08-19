@@ -100,6 +100,23 @@ def _server_lock_exit(exc: ServerLockHeld, db: Path) -> None:
     raise typer.Exit(code=1) from None
 
 
+def _unreadable_index_exit(db: Path, detail: str) -> None:
+    """Exit like a locked index does: no traceback, one actionable line.
+
+    zvec refusing to open a collection for any reason other than contention
+    (id-map corruption, a disk/mmap failure) leaves the command unable to answer
+    what it was asked, so it fails the same way a held index does rather than
+    printing a stack trace at an agent.
+    """
+    _err(
+        f"[dowse] cannot read the index at {db}\n"
+        f"[dowse] zvec reported: {detail}\n"
+        "[dowse] The collection looks damaged rather than busy. Run `dowse doctor` "
+        "for the full diagnosis, or rebuild it with `dowse index <path> --reset`."
+    )
+    raise typer.Exit(code=1) from None
+
+
 def _probe_serve_index(db: Path) -> None:
     """Fail fast if an existing index is currently held by an active writer."""
     if not db.exists() or not any(db.iterdir()):
@@ -137,6 +154,12 @@ def index(
         _locked_index_exit(exc)
     except service.UnsafeRootError as exc:
         _unsafe_root_exit(exc)
+    except typer.Exit:
+        # typer.Exit subclasses RuntimeError, so it has to pass through ahead of
+        # the catch-all below or a deliberate exit would be reported as damage.
+        raise
+    except RuntimeError as exc:
+        _unreadable_index_exit(db, str(exc))
     _emit(summary)
 
 
@@ -173,6 +196,10 @@ def query(
     except ValueError as exc:
         _err(f"[query] {exc}")
         raise typer.Exit(code=2) from None
+    except typer.Exit:
+        raise
+    except RuntimeError as exc:
+        _unreadable_index_exit(db, str(exc))
     _emit(payload)
 
 
@@ -194,6 +221,12 @@ def status(
         payload = service.run_index_status(db=db_path, root=root_path)
     except LockedIndexError as exc:
         _locked_index_exit(exc)
+    # run_index_status reports an unreadable collection instead of raising, so
+    # that doctor and the MCP tool can describe it. For a CLI caller asking how
+    # big the index is, though, `error` means the question went unanswered —
+    # stale is None too — so fail like a locked index rather than exiting 0.
+    if payload.get("error"):
+        _unreadable_index_exit(db_path, payload["error"])
     _emit(payload)
 
 

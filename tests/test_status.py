@@ -6,11 +6,13 @@ import os
 import time
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 import dowse.cli as cli
 import dowse.extract as extract
 import dowse.service as service
+from dowse.store import LockedIndexError
 
 runner = CliRunner()
 
@@ -26,6 +28,7 @@ def test_status_of_existing_index(sample_repo: Path, db_path: Path) -> None:
     assert status["indexed_files"] == 2
     assert status["dimension"] == 64
     assert status["languages"] == ["python"]
+    assert status["error"] is None
 
 
 def test_status_of_missing_index(tmp_path: Path, db_path: Path) -> None:
@@ -41,6 +44,140 @@ def test_status_of_missing_index(tmp_path: Path, db_path: Path) -> None:
     assert status["last_indexed_at"] is None
     assert status["stale"] is None
     assert status["missing_grammars"] == []
+    assert status["error"] is None
+
+
+def test_status_of_unreadable_index_reports_error(sample_repo: Path, db_path: Path, monkeypatch) -> None:
+    """A corrupt index is described, not raised — `status` answers "should I reindex?".
+
+    Since the lock matcher was narrowed, id-map corruption reaches callers as a
+    plain RuntimeError. Every status surface (CLI, MCP, hooks) shares this one
+    function, so it reports the damage rather than making each caller catch it.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    def fail_open_readonly(*_args, **_kwargs):
+        raise RuntimeError("create id map failed, path: idx/0.idmap")
+
+    monkeypatch.setattr(service.Store, "open_readonly", fail_open_readonly)
+    status = service.run_index_status(db=db_path, root=sample_repo)
+
+    assert status["exists"] is True
+    assert "create id map failed" in status["error"]
+    # Unknown, not empty: the index is there, we just couldn't read it.
+    assert status["indexed_symbols"] is None
+    assert status["indexed_files"] is None
+
+
+def test_cli_status_fails_cleanly_on_unreadable_index(
+    sample_repo: Path, db_path: Path, monkeypatch
+) -> None:
+    """An unanswerable status fails like a locked index: exit 1, no JSON, no traceback.
+
+    The service reports the damage in `error` so doctor and MCP can describe it,
+    but a CLI caller asked how big the index is and got no answer (`stale` is
+    None too), so exiting 0 would claim success it doesn't have.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    def fail_open_readonly(*_args, **_kwargs):
+        raise RuntimeError("create id map failed, path: idx/0.idmap")
+
+    monkeypatch.setattr(service.Store, "open_readonly", fail_open_readonly)
+    r = runner.invoke(cli.app, ["status", "--db", str(db_path), "--root", str(sample_repo)])
+
+    assert r.exit_code == 1
+    assert r.stdout == ""
+    assert "Traceback" not in r.stderr
+    assert "cannot read the index" in r.stderr
+    assert "create id map failed" in r.stderr
+    assert "--reset" in r.stderr
+
+
+def test_status_of_genuinely_corrupt_index_reports_error(sample_repo: Path, db_path: Path) -> None:
+    """Real corruption, no stub: a damaged id-map is described rather than raised.
+
+    Garbling zvec's id-map pointer produces its actual failure ("recovery idmap
+    failed"), which is the string a user really hits — and which no version of
+    the lock matcher ever matched, so `status` used to traceback on it.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    pointer = db_path / "idmap.0" / "CURRENT"
+    if not pointer.is_file():
+        pytest.skip("zvec id-map layout changed; the stubbed tests still cover the handling")
+    pointer.write_bytes(b"not a rocksdb manifest pointer")
+
+    status = service.run_index_status(db=db_path, root=sample_repo)
+
+    assert status["exists"] is True
+    assert status["error"]
+    assert status["indexed_symbols"] is None
+    assert status["indexed_files"] is None
+
+
+def _corrupt_idmap(db_path: Path) -> None:
+    """Break zvec's id-map pointer so opening the collection genuinely fails."""
+    pointer = db_path / "idmap.0" / "CURRENT"
+    if not pointer.is_file():
+        pytest.skip("zvec id-map layout changed; the stubbed tests still cover the handling")
+    pointer.write_bytes(b"not a rocksdb manifest pointer")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["query", "how do I authenticate a user"],
+        ["index", "{root}"],
+        ["status"],
+    ],
+)
+def test_cli_commands_report_damaged_index_without_traceback(
+    sample_repo: Path, db_path: Path, argv: list[str]
+) -> None:
+    """Every command that needs to read the index fails the same way on real damage.
+
+    Matches the locked-index convention (exit 1, empty stdout, one actionable
+    stderr line). `query` and `index` used to print a raw RuntimeError traceback
+    at whatever agent invoked them.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    _corrupt_idmap(db_path)
+
+    argv = [a.format(root=str(sample_repo)) for a in argv]
+    r = runner.invoke(cli.app, [*argv, "--db", str(db_path)])
+
+    assert r.exit_code == 1
+    assert r.stdout == ""
+    assert "Traceback" not in r.stderr
+    assert "cannot read the index" in r.stderr
+    assert "--reset" in r.stderr
+
+
+def test_cli_doctor_still_reports_json_on_damaged_index(sample_repo: Path, db_path: Path) -> None:
+    """doctor is the deliberate exception: describing damage is its job, so it exits 0."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    _corrupt_idmap(db_path)
+
+    r = runner.invoke(cli.app, ["doctor", "--db", str(db_path), "--root", str(sample_repo)])
+
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert "Traceback" not in r.stderr
+    report = json.loads(r.stdout)
+    assert report["locks"]["index"]["readable"] is False
+    assert report["locks"]["index"]["locked"] is False
+    assert report["index"]["error"]
+
+
+def test_status_of_locked_index_still_raises(sample_repo: Path, db_path: Path) -> None:
+    """Contention keeps raising: "wait for the writer" is not "your index is damaged"."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    writer = service.Store.open(db_path)
+    try:
+        with pytest.raises(LockedIndexError):
+            service.run_index_status(db=db_path, root=sample_repo)
+    finally:
+        del writer
 
 
 def test_status_missing_grammars(sample_repo: Path, db_path: Path, monkeypatch) -> None:

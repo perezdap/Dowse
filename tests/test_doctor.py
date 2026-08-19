@@ -43,6 +43,56 @@ def test_doctor_healthy_index(sample_repo: Path, db_path: Path) -> None:
     assert report["workspace"]["root"].replace("\\", "/").endswith("sample_repo")
 
 
+def test_doctor_reports_corrupt_index_as_unreadable_not_locked(
+    sample_repo: Path, db_path: Path, monkeypatch
+) -> None:
+    """A non-lock zvec failure is reported, not raised: doctor exists to surface it.
+
+    Narrowing the lock matcher means id-map corruption now propagates as a plain
+    RuntimeError, so the probe has to catch it — otherwise the one command a
+    user runs to diagnose a broken index is the command that crashes on it.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    def fail_open_readonly(*_args, **_kwargs):
+        raise RuntimeError("create id map failed, path: idx/0.idmap")
+
+    monkeypatch.setattr(service.Store, "open_readonly", fail_open_readonly)
+    report = service.run_doctor(db=db_path, root=sample_repo)
+
+    assert report["status"] == "ok"
+    assert report["locks"]["index"]["readable"] is False
+    assert report["locks"]["index"]["locked"] is False
+    assert "create id map failed" in report["locks"]["index"]["error"]
+    # The index block names the damage too, and reports unknown counts as None
+    # rather than 0 — an unreadable index is not an empty one.
+    assert "create id map failed" in report["index"]["error"]
+    assert report["index"]["exists"] is True
+    assert report["index"]["indexed_symbols"] is None
+    assert report["index"]["indexed_files"] is None
+
+
+def test_doctor_reports_locked_index_when_writer_holds_it(sample_repo: Path, db_path: Path) -> None:
+    """A real live writer is reported as locked, with no error string."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    writer = service.Store.open(db_path)
+    try:
+        report = service.run_doctor(db=db_path, root=sample_repo)
+    finally:
+        del writer
+
+    assert report["locks"]["index"]["readable"] is False
+    assert report["locks"]["index"]["locked"] is True
+    assert report["locks"]["index"]["error"] is None
+    # Contention is not damage: locked is reported in the locks block only, so
+    # the index block carries no error, and its counts are unknown (None), not 0.
+    assert report["index"]["error"] is None
+    assert report["index"]["exists"] is True
+    assert report["index"]["indexed_symbols"] is None
+    assert report["index"]["indexed_files"] is None
+
+
 def test_doctor_reports_serve_lock_held(sample_repo: Path, db_path: Path) -> None:
     service.run_index(path=sample_repo, db=db_path, reset=True)
     lock = acquire_server_lock(db_path)

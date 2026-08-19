@@ -16,7 +16,7 @@ import dowse.bootstrap as bootstrap
 import dowse.service as service
 from conftest import _symbol_docs, _symbol_names
 from dowse.server_lock import acquire_server_lock
-from dowse.store import Store
+from dowse.store import LockedIndexError, Store
 
 runner = CliRunner()
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]")
@@ -264,6 +264,70 @@ def test_cli_reset_reports_locked_index_without_traceback(sample_repo: Path, db_
     assert "index is already open" in r.stderr
     assert "dowse serve" in r.stderr
     assert "Traceback" not in r.stderr
+
+
+@pytest.mark.parametrize("entry_point", ["create", "open", "open_readonly"])
+def test_contended_index_reports_locked_on_every_entry_point(tmp_path: Path, entry_point: str) -> None:
+    """A live writer makes every Store entry point raise LockedIndexError.
+
+    Real contention, so the zvec lock phrasing itself is under test: a wording
+    change upstream breaks this, which a hand-written exception string cannot.
+    """
+    index = tmp_path / "idx"
+    writer = Store.create(index, dimension=8)
+    try:
+        opener = {
+            "create": lambda: Store.create(index, dimension=8),
+            "open": lambda: Store.open(index),
+            "open_readonly": lambda: Store.open_readonly(index),
+        }[entry_point]
+        with pytest.raises(LockedIndexError):
+            opener()
+    finally:
+        del writer
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "create id map failed, path: /idx/0.idmap: mmap failed: Input/output error",
+        "lock hold by pid 1234",
+        "No locks available",
+    ],
+)
+@pytest.mark.parametrize("entry_point", ["create", "open", "open_readonly"])
+def test_non_lock_zvec_failure_propagates_unchanged(
+    tmp_path: Path, monkeypatch, message: str, entry_point: str
+) -> None:
+    """Only genuine lock refusals become LockedIndexError; everything else propagates.
+
+    zvec raises "create id map failed" only after this process already holds the
+    collection lock, so it means id-map corruption or a disk/mmap failure, never
+    contention. "lock hold by" and "No locks available" never come from zvec's
+    collection-lock path either. Classifying any of them as a locked index hid a
+    real failure behind "wait for the other process".
+
+    All three entry points share `_is_lock_error`, so all three are checked here.
+    zvec is stubbed because there is no cheap way to provoke genuine id-map
+    corruption; the sibling test above covers real refusals end to end.
+    """
+    def fail(*_args, **_kwargs):
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(zvec, "create_and_open", fail)
+    monkeypatch.setattr(zvec, "open", fail)
+    index = tmp_path / "idx"
+    opener = {
+        "create": lambda: Store.create(index, dimension=8),
+        "open": lambda: Store.open(index),
+        "open_readonly": lambda: Store.open_readonly(index),
+    }[entry_point]
+
+    with pytest.raises(RuntimeError) as excinfo:
+        opener()
+
+    assert not isinstance(excinfo.value, LockedIndexError)
+    assert str(excinfo.value) == message
 
 
 def test_cli_query_allows_another_readonly_user(sample_repo: Path, db_path: Path) -> None:

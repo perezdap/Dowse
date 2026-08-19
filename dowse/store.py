@@ -37,17 +37,24 @@ class LockedIndexError(RuntimeError):
         self.path = path
 
 
+# The canonical lock-refusal phrase set, verified against zvec 0.5.0 and 0.6.0:
+# zvec phrases the refusal per mode ("Can't lock read-write collection: <path>"
+# when a writer is blocked, "Can't lock read-only collection: <path>" when a
+# reader is blocked by an active writer), and these two words are the whole of
+# what they share. Re-verify this set against the binary when bumping zvec
+# rather than overlaying a new variant, so the matcher can't silently widen.
+#
+# Deliberately excluded: "create id map failed" is raised only after this
+# process already holds the collection lock, so it means id-map corruption or a
+# disk/mmap failure, never contention; "lock hold by" appears in no published
+# wheel; and "No locks available" is the POSIX ENOLCK text from the C++
+# system_error table embedded in the binary, not a zvec message at all.
+_LOCK_REFUSAL_PHRASES = ("Can't lock", "collection")
+
+
 def _is_lock_error(exc: BaseException) -> bool:
-    # zvec phrases the lock refusal per mode: "Can't lock read-write collection"
-    # when a writer is blocked, "Can't lock read-only collection" when a reader
-    # is blocked by an active writer. Both mean "another handle owns it".
     msg = str(exc)
-    return (
-        ("Can't lock" in msg and "collection" in msg)
-        or "lock hold by" in msg
-        or "No locks available" in msg
-        or "create id map failed" in msg
-    )
+    return all(phrase in msg for phrase in _LOCK_REFUSAL_PHRASES)
 
 
 def _sql_str(value: str) -> str:

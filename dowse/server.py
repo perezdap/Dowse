@@ -118,9 +118,15 @@ def build_server(default_db: str = "./.dowse_index", default_model: str = DEFAUL
 
         Returns:
             A status object: exists, db_path, indexed_files, indexed_symbols,
-            dimension, languages, last_indexed_at, stale, missing_grammars.
-            `missing_grammars` lists each language seen on disk whose grammar
-            wheel is not installed, with an actionable `install_hint`.
+            dimension, languages, last_indexed_at, stale, missing_grammars,
+            error. `missing_grammars` lists each language seen on disk whose
+            grammar wheel is not installed, with an actionable `install_hint`.
+            `error` is null for a healthy index; when it is set the collection
+            exists but could not be read (id-map corruption, a disk failure),
+            the counts are null rather than 0 because they are unknown, and the
+            fix is to rebuild with `index_codebase(reset=True)`. A collection
+            held by another writer still raises instead, since waiting for that
+            handle is a different remedy than rebuilding.
         """
         root = Path(workspace) if workspace else Path.cwd()
         return service.run_index_status(db=db or str(root / ".dowse_index"), root=root)
