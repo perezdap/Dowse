@@ -332,13 +332,15 @@ def _unopened_index_status(
     """The index-status shape for a collection we never got to read.
 
     One shape for both reasons a read can't happen — there is no index yet, or
-    there is one we couldn't open — so callers parse a single contract.
+    there is one we couldn't open — so callers parse a single contract. Counts
+    are 0 only when there is genuinely nothing indexed; for an index that exists
+    but wouldn't open they are None, because unknown is not the same as empty.
     """
     return {
         "exists": exists,
         "db_path": str(db_path),
-        "indexed_files": 0,
-        "indexed_symbols": 0,
+        "indexed_files": None if exists else 0,
+        "indexed_symbols": None if exists else 0,
         "dimension": None,
         "languages": [],
         "last_indexed_at": None,
@@ -358,6 +360,12 @@ def run_index_status(
     two extra signals: `missing_grammars` (files on disk whose grammar wheel is
     not installed) and `stale` (a source file newer than the index). Both are
     best-effort heuristics; `stale` is None when there is no root to compare.
+
+    An index zvec can't read at all (id-map corruption, a disk/mmap failure) is
+    reported in `error` rather than raised: describing a broken index is the
+    whole point of asking for its status. Contention still raises
+    LockedIndexError, because waiting for the other handle is a different answer
+    than "this index is damaged".
     """
     db_path = Path(db)
     exists = db_path.exists() and any(db_path.iterdir())
@@ -365,6 +373,15 @@ def run_index_status(
     if not exists:
         return _unopened_index_status(db_path, root, exists=False)
 
+    try:
+        return _read_index_status(db_path, root)
+    except LockedIndexError:
+        raise
+    except RuntimeError as exc:
+        return _unopened_index_status(db_path, root, exists=True, error=str(exc))
+
+
+def _read_index_status(db_path: Path, root: str | Path | None) -> dict:
     # Even though this is read-only, zvec's Python binding isn't thread-safe for
     # concurrent in-process handles, so serialize to avoid binding-level errors.
     with _index_lock(db_path):
@@ -594,11 +611,13 @@ def run_doctor(
 
     try:
         index_status = run_index_status(db=db_path, root=root_path)
-    except RuntimeError as exc:
-        # Covers both a live writer holding the collection and an index zvec
-        # can't open at all. Either way doctor describes the state; the probe
-        # below distinguishes locked from unreadable.
-        index_status = _unopened_index_status(db_path, root_path, exists=True, error=str(exc))
+    except LockedIndexError:
+        # A live writer owns the collection, so the index's contents are simply
+        # unknown right now — not damaged. Deliberately no `error`: contention is
+        # reported as `locks.index.locked` below, and putting the lock message
+        # here would read as a broken index. Unreadable indexes never reach this
+        # handler; run_index_status reports those in `error` itself.
+        index_status = _unopened_index_status(db_path, root_path, exists=True)
 
     return {
         "status": "ok",

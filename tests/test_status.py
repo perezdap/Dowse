@@ -6,11 +6,13 @@ import os
 import time
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 import dowse.cli as cli
 import dowse.extract as extract
 import dowse.service as service
+from dowse.store import LockedIndexError
 
 runner = CliRunner()
 
@@ -26,6 +28,7 @@ def test_status_of_existing_index(sample_repo: Path, db_path: Path) -> None:
     assert status["indexed_files"] == 2
     assert status["dimension"] == 64
     assert status["languages"] == ["python"]
+    assert status["error"] is None
 
 
 def test_status_of_missing_index(tmp_path: Path, db_path: Path) -> None:
@@ -41,6 +44,79 @@ def test_status_of_missing_index(tmp_path: Path, db_path: Path) -> None:
     assert status["last_indexed_at"] is None
     assert status["stale"] is None
     assert status["missing_grammars"] == []
+    assert status["error"] is None
+
+
+def test_status_of_unreadable_index_reports_error(sample_repo: Path, db_path: Path, monkeypatch) -> None:
+    """A corrupt index is described, not raised — `status` answers "should I reindex?".
+
+    Since the lock matcher was narrowed, id-map corruption reaches callers as a
+    plain RuntimeError. Every status surface (CLI, MCP, hooks) shares this one
+    function, so it reports the damage rather than making each caller catch it.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    def fail_open_readonly(*_args, **_kwargs):
+        raise RuntimeError("create id map failed, path: idx/0.idmap")
+
+    monkeypatch.setattr(service.Store, "open_readonly", fail_open_readonly)
+    status = service.run_index_status(db=db_path, root=sample_repo)
+
+    assert status["exists"] is True
+    assert "create id map failed" in status["error"]
+    # Unknown, not empty: the index is there, we just couldn't read it.
+    assert status["indexed_symbols"] is None
+    assert status["indexed_files"] is None
+
+
+def test_cli_status_reports_unreadable_index_without_traceback(
+    sample_repo: Path, db_path: Path, monkeypatch
+) -> None:
+    """The CLI keeps its stdout-JSON contract on a broken index."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    def fail_open_readonly(*_args, **_kwargs):
+        raise RuntimeError("create id map failed, path: idx/0.idmap")
+
+    monkeypatch.setattr(service.Store, "open_readonly", fail_open_readonly)
+    r = runner.invoke(cli.app, ["status", "--db", str(db_path), "--root", str(sample_repo)])
+
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert "Traceback" not in r.stderr
+    assert "create id map failed" in json.loads(r.stdout)["error"]
+
+
+def test_status_of_genuinely_corrupt_index_reports_error(sample_repo: Path, db_path: Path) -> None:
+    """Real corruption, no stub: a damaged id-map is described rather than raised.
+
+    Garbling zvec's id-map pointer produces its actual failure ("recovery idmap
+    failed"), which is the string a user really hits — and which no version of
+    the lock matcher ever matched, so `status` used to traceback on it.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    pointer = db_path / "idmap.0" / "CURRENT"
+    if not pointer.is_file():
+        pytest.skip("zvec id-map layout changed; the stubbed tests still cover the handling")
+    pointer.write_bytes(b"not a rocksdb manifest pointer")
+
+    status = service.run_index_status(db=db_path, root=sample_repo)
+
+    assert status["exists"] is True
+    assert status["error"]
+    assert status["indexed_symbols"] is None
+    assert status["indexed_files"] is None
+
+
+def test_status_of_locked_index_still_raises(sample_repo: Path, db_path: Path) -> None:
+    """Contention keeps raising: "wait for the writer" is not "your index is damaged"."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+
+    writer = service.Store.open(db_path)
+    try:
+        with pytest.raises(LockedIndexError):
+            service.run_index_status(db=db_path, root=sample_repo)
+    finally:
+        del writer
 
 
 def test_status_missing_grammars(sample_repo: Path, db_path: Path, monkeypatch) -> None:

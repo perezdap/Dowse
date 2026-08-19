@@ -295,7 +295,10 @@ def test_contended_index_reports_locked_on_every_entry_point(tmp_path: Path, ent
         "No locks available",
     ],
 )
-def test_non_lock_zvec_failure_propagates_unchanged(tmp_path: Path, monkeypatch, message: str) -> None:
+@pytest.mark.parametrize("entry_point", ["create", "open", "open_readonly"])
+def test_non_lock_zvec_failure_propagates_unchanged(
+    tmp_path: Path, monkeypatch, message: str, entry_point: str
+) -> None:
     """Only genuine lock refusals become LockedIndexError; everything else propagates.
 
     zvec raises "create id map failed" only after this process already holds the
@@ -304,15 +307,24 @@ def test_non_lock_zvec_failure_propagates_unchanged(tmp_path: Path, monkeypatch,
     collection-lock path either. Classifying any of them as a locked index hid a
     real failure behind "wait for the other process".
 
-    zvec is stubbed here because there is no cheap way to provoke genuine id-map
+    All three entry points share `_is_lock_error`, so all three are checked here.
+    zvec is stubbed because there is no cheap way to provoke genuine id-map
     corruption; the sibling test above covers real refusals end to end.
     """
     def fail(*_args, **_kwargs):
         raise RuntimeError(message)
 
     monkeypatch.setattr(zvec, "create_and_open", fail)
+    monkeypatch.setattr(zvec, "open", fail)
+    index = tmp_path / "idx"
+    opener = {
+        "create": lambda: Store.create(index, dimension=8),
+        "open": lambda: Store.open(index),
+        "open_readonly": lambda: Store.open_readonly(index),
+    }[entry_point]
+
     with pytest.raises(RuntimeError) as excinfo:
-        Store.create(tmp_path / "idx", dimension=8)
+        opener()
 
     assert not isinstance(excinfo.value, LockedIndexError)
     assert str(excinfo.value) == message
