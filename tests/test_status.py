@@ -69,10 +69,15 @@ def test_status_of_unreadable_index_reports_error(sample_repo: Path, db_path: Pa
     assert status["indexed_files"] is None
 
 
-def test_cli_status_reports_unreadable_index_without_traceback(
+def test_cli_status_fails_cleanly_on_unreadable_index(
     sample_repo: Path, db_path: Path, monkeypatch
 ) -> None:
-    """The CLI keeps its stdout-JSON contract on a broken index."""
+    """An unanswerable status fails like a locked index: exit 1, no JSON, no traceback.
+
+    The service reports the damage in `error` so doctor and MCP can describe it,
+    but a CLI caller asked how big the index is and got no answer (`stale` is
+    None too), so exiting 0 would claim success it doesn't have.
+    """
     service.run_index(path=sample_repo, db=db_path, reset=True)
 
     def fail_open_readonly(*_args, **_kwargs):
@@ -81,9 +86,12 @@ def test_cli_status_reports_unreadable_index_without_traceback(
     monkeypatch.setattr(service.Store, "open_readonly", fail_open_readonly)
     r = runner.invoke(cli.app, ["status", "--db", str(db_path), "--root", str(sample_repo)])
 
-    assert r.exit_code == 0, r.stdout + r.stderr
+    assert r.exit_code == 1
+    assert r.stdout == ""
     assert "Traceback" not in r.stderr
-    assert "create id map failed" in json.loads(r.stdout)["error"]
+    assert "cannot read the index" in r.stderr
+    assert "create id map failed" in r.stderr
+    assert "--reset" in r.stderr
 
 
 def test_status_of_genuinely_corrupt_index_reports_error(sample_repo: Path, db_path: Path) -> None:
@@ -105,6 +113,59 @@ def test_status_of_genuinely_corrupt_index_reports_error(sample_repo: Path, db_p
     assert status["error"]
     assert status["indexed_symbols"] is None
     assert status["indexed_files"] is None
+
+
+def _corrupt_idmap(db_path: Path) -> None:
+    """Break zvec's id-map pointer so opening the collection genuinely fails."""
+    pointer = db_path / "idmap.0" / "CURRENT"
+    if not pointer.is_file():
+        pytest.skip("zvec id-map layout changed; the stubbed tests still cover the handling")
+    pointer.write_bytes(b"not a rocksdb manifest pointer")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["query", "how do I authenticate a user"],
+        ["index", "{root}"],
+        ["status"],
+    ],
+)
+def test_cli_commands_report_damaged_index_without_traceback(
+    sample_repo: Path, db_path: Path, argv: list[str]
+) -> None:
+    """Every command that needs to read the index fails the same way on real damage.
+
+    Matches the locked-index convention (exit 1, empty stdout, one actionable
+    stderr line). `query` and `index` used to print a raw RuntimeError traceback
+    at whatever agent invoked them.
+    """
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    _corrupt_idmap(db_path)
+
+    argv = [a.format(root=str(sample_repo)) for a in argv]
+    r = runner.invoke(cli.app, [*argv, "--db", str(db_path)])
+
+    assert r.exit_code == 1
+    assert r.stdout == ""
+    assert "Traceback" not in r.stderr
+    assert "cannot read the index" in r.stderr
+    assert "--reset" in r.stderr
+
+
+def test_cli_doctor_still_reports_json_on_damaged_index(sample_repo: Path, db_path: Path) -> None:
+    """doctor is the deliberate exception: describing damage is its job, so it exits 0."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    _corrupt_idmap(db_path)
+
+    r = runner.invoke(cli.app, ["doctor", "--db", str(db_path), "--root", str(sample_repo)])
+
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert "Traceback" not in r.stderr
+    report = json.loads(r.stdout)
+    assert report["locks"]["index"]["readable"] is False
+    assert report["locks"]["index"]["locked"] is False
+    assert report["index"]["error"]
 
 
 def test_status_of_locked_index_still_raises(sample_repo: Path, db_path: Path) -> None:
