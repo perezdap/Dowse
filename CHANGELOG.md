@@ -5,6 +5,47 @@ All notable changes to **dowse** are documented here. Dates are in UTC.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Id-map corruption is no longer reported as a locked index:** `_is_lock_error`
+  matched four zvec strings, but only `"Can't lock" … "collection"` means "another
+  handle owns it". `"create id map failed"` fires *after* this process takes the
+  collection lock, so it signals real id-map/disk failure; `"lock hold by"` is in
+  no published wheel; `"No locks available"` is the POSIX `ENOLCK` text from the
+  C++ `system_error` table. Matching them hid corruption behind "wait for the
+  other process". The surviving phrase set is now the named, version-anchored
+  `_LOCK_REFUSAL_PHRASES` (#41).
+- **`dowse status`, `query`, and `index` no longer print a traceback** when the
+  collection cannot be read. They fail like a held index does: exit 1, no stdout,
+  one stderr line carrying zvec's message and the `--reset` remedy. This crash
+  predates the matcher change — no version of it ever matched zvec's actual
+  open-path failure, `"recovery idmap failed"`.
+- **`dowse doctor` survives a broken or busy index.** It previously raised out of
+  `run_index_status` before reaching its own lock probe, so the one command for
+  diagnosing an unusable index was the command that died on it.
+
+### Changed
+- **Index status reports unreadable collections instead of raising.**
+  `run_index_status` (so `status`, `doctor`, and the MCP `index_status` tool) gains
+  an `error` field: null on a healthy index, set when the collection exists but
+  zvec cannot open it. Contention still raises `LockedIndexError`, because waiting
+  for another handle is a different remedy than rebuilding.
+- **Unknown counts are null, not 0.** For an index that exists but could not be
+  read, `indexed_files` / `indexed_symbols` are null — unknown is not empty.
+  Consumers treating `0` as "nothing indexed" are unaffected on healthy indexes.
+- `doctor` keeps exiting 0 on a damaged index and reports the damage in its JSON:
+  describing a broken index is what it is for. Contention appears only as
+  `locks.index.locked`, never as an `index.error`.
+
+### Tested
+- Real zvec contention across `Store.create` / `open` / `open_readonly`, so the
+  upstream lock wording itself is under test rather than a hand-written string.
+- A genuinely corrupted id-map pointer (not a stub) driving `status`, `query`,
+  `index`, and `doctor` through the CLI, asserting exit codes and no traceback.
+- Non-lock failures propagate unchanged across all three entry points and all
+  three dropped phrases.
+
 ## [0.3.0] - 2026-08-18
 
 ### Added
