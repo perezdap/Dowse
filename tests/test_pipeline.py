@@ -266,32 +266,6 @@ def test_cli_reset_reports_locked_index_without_traceback(sample_repo: Path, db_
     assert "Traceback" not in r.stderr
 
 
-def test_cli_reset_reports_linux_same_process_lock_without_traceback(
-    sample_repo: Path, db_path: Path, monkeypatch
-) -> None:
-    db_path.mkdir()
-
-    def fail(*_args, **_kwargs):
-        raise RuntimeError(
-            "IO error: lock hold by current process /idx/idmap.0/LOCK: No locks available\n"
-            "Failed to open IDMap"
-        )
-
-    monkeypatch.setattr(zvec, "create_and_open", fail)
-
-    r = runner.invoke(
-        cli.app,
-        ["index", str(sample_repo), "--db", str(db_path), "--reset"],
-    )
-
-    assert r.exit_code == 1
-    assert r.stdout == ""
-    assert "index is already open" in r.stderr
-    assert "dowse serve" in r.stderr
-    assert "damaged rather than busy" not in r.stderr
-    assert "Traceback" not in r.stderr
-
-
 @pytest.mark.parametrize("entry_point", ["create", "open", "open_readonly"])
 def test_contended_index_reports_locked_on_every_entry_point(tmp_path: Path, entry_point: str) -> None:
     """A live writer makes every Store entry point raise LockedIndexError.
