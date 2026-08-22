@@ -37,24 +37,27 @@ class LockedIndexError(RuntimeError):
         self.path = path
 
 
-# The canonical lock-refusal phrase set, verified against zvec 0.5.0 and 0.6.0:
-# zvec phrases the refusal per mode ("Can't lock read-write collection: <path>"
-# when a writer is blocked, "Can't lock read-only collection: <path>" when a
-# reader is blocked by an active writer), and these two words are the whole of
-# what they share. Re-verify this set against the binary when bumping zvec
-# rather than overlaying a new variant, so the matcher can't silently widen.
+# Canonical lock-refusal signatures verified against zvec 0.5.0 and 0.6.0.
+# Collection-level contention uses the first signature. On Linux, reopening an
+# index held by the same process can instead fail through RocksDB's id-map LOCK
+# file and uses the second signature. Its phrases are only meaningful together:
+# either one alone can occur in a non-contention failure.
 #
 # Deliberately excluded: "create id map failed" is raised only after this
 # process already holds the collection lock, so it means id-map corruption or a
-# disk/mmap failure, never contention; "lock hold by" appears in no published
-# wheel; and "No locks available" is the POSIX ENOLCK text from the C++
-# system_error table embedded in the binary, not a zvec message at all.
-_LOCK_REFUSAL_PHRASES = ("Can't lock", "collection")
+# disk/mmap failure, never contention.
+_LOCK_REFUSAL_SIGNATURES = (
+    ("Can't lock", "collection"),
+    ("lock hold by current process", "idmap.", "/LOCK", "No locks available"),
+)
 
 
 def _is_lock_error(exc: BaseException) -> bool:
-    msg = str(exc)
-    return all(phrase in msg for phrase in _LOCK_REFUSAL_PHRASES)
+    msg = str(exc).replace("\\", "/")
+    return any(
+        all(phrase in msg for phrase in signature)
+        for signature in _LOCK_REFUSAL_SIGNATURES
+    )
 
 
 def _sql_str(value: str) -> str:
