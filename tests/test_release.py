@@ -25,6 +25,16 @@ def test_release_workflow_triggers_on_tags_not_prs() -> None:
     assert "pull_request" not in content
 
 
+def test_release_workflow_tests_windows_and_linux() -> None:
+    content = WORKFLOW.read_text(encoding="utf-8")
+    test_section = content[content.index("  test:") : content.index("  build:")]
+
+    assert "matrix:" in test_section
+    assert "windows-latest" in test_section
+    assert "ubuntu-latest" in test_section
+    assert "runs-on: ${{ matrix.os }}" in test_section
+
+
 def test_release_workflow_builds_wheel_and_sdist() -> None:
     content = WORKFLOW.read_text(encoding="utf-8")
     assert "python -m build" in content

@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-22
+
+### Fixed
+- **Linux reset contention:** `dowse index --reset` now probes an existing
+  collection before removing it. POSIX permits deleting a collection that zvec
+  still has open; probing first preserves zvec's unambiguous collection-lock
+  error instead of reaching a later id-map failure that looks like corruption
+  (#52).
+
+### Tested
+- Release tags run the full test job on Windows and Linux before the package is
+  built or published.
+
 ## [0.3.0] - 2026-08-21
 
 ### Added

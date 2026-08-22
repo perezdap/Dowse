@@ -55,6 +55,7 @@ approve before production publishes.
    ```
 
 4. The `Release` workflow fires automatically:
+   - **test** — runs ruff, pytest, and the Pi extension tests on Windows and Linux
    - **build** — `python -m build` + `twine check dist/*`
    - **publish-testpypi** — publishes to TestPyPI (rehearsal)
    - **publish-pypi** — publishes to PyPI after TestPyPI succeeds
@@ -88,7 +89,8 @@ dowse status
 - The workflow **does not trigger on pull requests** — only on `v*` tag pushes.
 - `skip-existing: true` on both publish jobs means re-running a tag won't fail
   if the version already exists on PyPI/TestPyPI.
-- **Build** runs on `windows-latest` (matches CI). **Publish** jobs run on
-  `ubuntu-latest` because `pypa/gh-action-pypi-publish` requires GNU/Linux.
+- **Tests** run on `windows-latest` and `ubuntu-latest`. **Build** runs on
+  `windows-latest` (matches CI). **Publish** jobs run on `ubuntu-latest` because
+  `pypa/gh-action-pypi-publish` requires GNU/Linux.
 - No API tokens are used anywhere. All authentication is via OIDC Trusted
   Publishing.
