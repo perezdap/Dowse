@@ -98,6 +98,18 @@ class Store:
     def create(cls, path: str | Path, dimension: int, reset: bool = False) -> "Store":
         path = Path(path)
         if reset and path.exists():
+            # POSIX permits deleting an open collection. Probe while its LOCK
+            # file still exists so zvec can report contention unambiguously.
+            try:
+                existing = cls.open_readonly(path)
+            except LockedIndexError:
+                raise
+            except RuntimeError:
+                # A damaged collection must remain resettable. Only a genuine
+                # lock refusal blocks removal.
+                pass
+            else:
+                del existing
             try:
                 shutil.rmtree(path)
             except PermissionError:
