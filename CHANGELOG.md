@@ -7,6 +7,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Python module-level functions now retain a directly preceding uppercase
+  constant and its attached comments when the function uses that identifier.
+  This makes constant-backed error strings searchable. The contiguous context
+  prefix is capped at 1200 bytes, and snippet line ranges include that context.
+  Decorated functions are supported. Other languages and the index schema are
+  unchanged. Refresh an existing index to apply the new extraction.
+
+### Tested
+- Model-free index/query regressions cover constant-backed retrieval, decorated
+  functions, source line ranges, and unrelated or oversized declarations.
+- Added a manual real-model check for the six retrieval questions and the lock
+  error literal: `python -m scripts.evaluate_retrieval . --db ./.dowse_index`.
+  Compare revisions against the same source snapshot to keep the corpus fixed.
+
 ## [0.3.1] - 2026-08-22
 
 ### Fixed
