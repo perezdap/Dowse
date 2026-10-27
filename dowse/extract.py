@@ -403,6 +403,7 @@ def extract_file(path: Path, root: Path, include_definitions: bool = False) -> l
                         start_line=start.start_point[0] + 1,
                         end_line=node.end_point[0] + 1,
                         code_content=src[start.start_byte:node.end_byte].decode("utf-8", "replace"),
+                        context_lines=node.start_point[0] - start.start_point[0],
                     )
                 )
         stack.extend(node.children)

@@ -15,9 +15,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Decorated functions are supported. Other languages and the index schema are
   unchanged. Refresh an existing index to apply the new extraction.
 
+### Fixed
+- Retained constant context no longer pushes the function body out of the
+  embedding window. Embedding input puts the body first, while stored snippets
+  keep their original source order and line ranges. The extraction metadata
+  used for this ordering is not stored in the index schema.
+- Constant references now use Python scope analysis instead of matching every
+  identifier with the same spelling. Parameters, local bindings, attribute
+  names, keyword names, and write-only global declarations no longer attach
+  unrelated constant values. Code that cannot be scoped is left unchanged.
+
 ### Tested
 - Model-free index/query regressions cover constant-backed retrieval, decorated
-  functions, source line ranges, and unrelated or oversized declarations.
+  functions, source line ranges, global reads, and unrelated or oversized
+  declarations. A bounded-encoder regression covers function-body truncation.
 - Added a manual real-model check for the six retrieval questions and the lock
   error literal: `python -m scripts.evaluate_retrieval . --db ./.dowse_index`.
   Compare revisions against the same source snapshot to keep the corpus fixed.
