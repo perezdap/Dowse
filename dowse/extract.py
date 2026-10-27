@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+import symtable
 from typing import Callable, Iterable
 
 import pathspec
@@ -301,6 +302,24 @@ def _qualified_name(node, src: bytes, spec: LangSpec) -> str | None:
 _MAX_CONTEXT_BYTES = 1200  # Bound declaration context independently of the function body.
 
 
+def _loads_module_global(source: bytes, name: str) -> bool:
+    # Scope analysis separates real global loads from parameters, locals,
+    # attributes and keywords that only share the constant's spelling.
+    try:
+        tables = [symtable.symtable(source.decode("utf-8", "replace"), "<symbol>", "exec")]
+    except (SyntaxError, ValueError):
+        # Newer or broken syntax cannot be scoped; omit context rather than guess.
+        return False
+    while tables:
+        table = tables.pop()
+        if name in table.get_identifiers():
+            symbol = table.lookup(name)
+            if symbol.is_referenced() and symbol.is_global():
+                return True
+        tables.extend(table.get_children())
+    return False
+
+
 def _python_context_start(node, src: bytes):
     # Keep a directly preceding constant with its consumer, so error strings
     # and their explanation are searchable without indexing whole modules.
@@ -329,13 +348,7 @@ def _python_context_start(node, src: bytes):
     identifier = src[name.start_byte:name.end_byte]
     if not identifier.isupper():
         return node
-    descendants = [node]
-    while descendants:
-        child = descendants.pop()
-        if child.type == "identifier" and src[child.start_byte:child.end_byte] == identifier:
-            break
-        descendants.extend(child.named_children)
-    else:
+    if not _loads_module_global(src[consumer.start_byte:node.end_byte], identifier.decode()):
         return node
 
     start = previous
