@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+import symtable
 from typing import Callable, Iterable
 
 import pathspec
@@ -298,6 +299,72 @@ def _qualified_name(node, src: bytes, spec: LangSpec) -> str | None:
     return ".".join(reversed(parts))
 
 
+_MAX_CONTEXT_BYTES = 1200  # Bound declaration context independently of the function body.
+
+
+def _loads_module_global(source: bytes, name: str) -> bool:
+    # Scope analysis separates real global loads from parameters, locals,
+    # attributes and keywords that only share the constant's spelling.
+    try:
+        tables = [symtable.symtable(source.decode("utf-8", "replace"), "<symbol>", "exec")]
+    except (SyntaxError, ValueError):
+        # Newer or broken syntax cannot be scoped; omit context rather than guess.
+        return False
+    while tables:
+        table = tables.pop()
+        if name in table.get_identifiers():
+            symbol = table.lookup(name)
+            if symbol.is_referenced() and symbol.is_global():
+                return True
+        tables.extend(table.get_children())
+    return False
+
+
+def _python_context_start(node, src: bytes):
+    # Keep a directly preceding constant with its consumer, so error strings
+    # and their explanation are searchable without indexing whole modules.
+    if node.type != "function_definition":
+        return node
+    consumer = node.parent if node.parent.type == "decorated_definition" else node
+    if consumer.parent.type != "module":
+        return node
+    following = consumer
+    previous = following.prev_named_sibling
+    while previous is not None and previous.type == "comment":
+        if following.start_point[0] - previous.end_point[0] > 3:
+            return node
+        following = previous
+        previous = previous.prev_named_sibling
+    if previous is None or previous.type != "expression_statement":
+        return node
+    if following.start_point[0] - previous.end_point[0] > 3:
+        return node
+    assignment = previous.named_children[0]
+    if assignment.type != "assignment":
+        return node
+    name = assignment.child_by_field_name("left")
+    if name is None or name.type != "identifier":
+        return node
+    identifier = src[name.start_byte:name.end_byte]
+    if not identifier.isupper():
+        return node
+    if not _loads_module_global(src[consumer.start_byte:node.end_byte], identifier.decode()):
+        return node
+
+    start = previous
+    if node.start_byte - start.start_byte > _MAX_CONTEXT_BYTES:
+        return node
+    previous = start.prev_named_sibling
+    while previous is not None and previous.type == "comment":
+        if start.start_point[0] - previous.end_point[0] > 1:
+            break
+        if node.start_byte - previous.start_byte > _MAX_CONTEXT_BYTES:
+            break
+        start = previous
+        previous = start.prev_named_sibling
+    return start
+
+
 def extract_file(path: Path, root: Path, include_definitions: bool = False) -> list[Symbol]:
     """Parse one file into function/class/section symbols (or [] if unsupported)."""
     suffix = path.suffix.lower()
@@ -326,15 +393,17 @@ def extract_file(path: Path, root: Path, include_definitions: bool = False) -> l
             qname = _qualified_name(node, src, spec)
             if qname:
                 kind = "class" if node.type in spec.class_types else "function"
+                start = _python_context_start(node, src) if spec.name == "python" else node
                 symbols.append(
                     Symbol(
                         file_path=rel,
                         symbol_name=qname,
                         kind=kind,
                         language=spec.name,
-                        start_line=node.start_point[0] + 1,
+                        start_line=start.start_point[0] + 1,
                         end_line=node.end_point[0] + 1,
-                        code_content=src[node.start_byte:node.end_byte].decode("utf-8", "replace"),
+                        code_content=src[start.start_byte:node.end_byte].decode("utf-8", "replace"),
+                        context_lines=node.start_point[0] - start.start_point[0],
                     )
                 )
         stack.extend(node.children)
