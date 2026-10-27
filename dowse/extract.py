@@ -314,8 +314,7 @@ def _loads_module_global(source: bytes, name: str) -> bool:
         table = tables.pop()
         if name in table.get_identifiers():
             symbol = table.lookup(name)
-            # `global` binds the module name even when the function only writes it.
-            if symbol.is_declared_global() or (symbol.is_referenced() and symbol.is_global()):
+            if symbol.is_referenced() and symbol.is_global():
                 return True
         tables.extend(table.get_children())
     return False

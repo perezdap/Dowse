@@ -30,6 +30,8 @@ def _indexed_consume(tmp_path: Path, db_path: Path, source: str) -> dict:
         "def consume(config):\n    return config.LIMIT",
         "def consume(build):\n    return build(LIMIT=1)",
         "def consume():\n    nonlocal LIMIT\n    return LIMIT",
+        "def consume():\n    global LIMIT\n    LIMIT = 1",
+        "def consume():\n    global LIMIT",
     ],
     ids=[
         "parameter",
@@ -39,6 +41,8 @@ def _indexed_consume(tmp_path: Path, db_path: Path, source: str) -> dict:
         "attribute",
         "keyword",
         "syntax-error",
+        "global-write-only",
+        "global-declaration-only",
     ],
 )
 def test_index_does_not_attach_constant_for_same_spelling_non_global(
@@ -57,9 +61,10 @@ def test_index_does_not_attach_constant_for_same_spelling_non_global(
         "def consume(items):\n    return [item for item in items if item < LIMIT]",
         "def consume():\n    def inner():\n        return LIMIT\n    return inner",
         "def consume(LIMIT_OVERRIDE=None):\n    def inner(LIMIT):\n        return LIMIT\n    return inner(LIMIT)",
-        "def consume():\n    global LIMIT\n    LIMIT += 1",
+        "def consume():\n    global LIMIT\n    return LIMIT",
+        "@register(LIMIT)\ndef consume():\n    return 1",
     ],
-    ids=["body", "default", "comprehension", "nested", "shadowed-only-inside", "declared-global"],
+    ids=["body", "default", "comprehension", "nested", "shadowed-only-inside", "global-load", "decorator"],
 )
 def test_index_attaches_constant_for_module_global_load(
     tmp_path: Path, db_path: Path, function: str
