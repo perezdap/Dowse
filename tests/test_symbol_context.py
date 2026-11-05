@@ -80,3 +80,50 @@ def test_index_does_not_attach_unrelated_declarations(
     )
 
     assert result["results"][0]["code_content"].splitlines() == function.splitlines()
+
+
+def _indexed_consume(tmp_path: Path, db_path: Path, source: str) -> dict:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text(source, encoding="utf-8")
+
+    service.run_index(path=repo, db=db_path)
+    result = service.run_query(
+        "consume", db=db_path, filter="symbol_name = 'consume'", top=1
+    )
+    return result["results"][0]
+
+
+def test_index_starts_constant_context_after_unrelated_trailing_comment(
+    tmp_path: Path, db_path: Path
+) -> None:
+    source = (
+        "value = compute()  # unrelated trailing note\n"
+        "# Upper bound for consumers.\n"
+        "LIMIT = 3\n\n"
+        "def consume():\n    return LIMIT\n"
+    )
+
+    match = _indexed_consume(tmp_path, db_path, source)
+
+    assert match["start_line"] == 2
+    assert match["code_content"].splitlines() == source.splitlines()[1:]
+
+
+@pytest.mark.parametrize(
+    ("preamble", "decorator"),
+    [
+        ("", "@checked\n"),
+        ("LIMIT = 3\n\n", "@checked(" + "'x', " * 300 + ")\n"),
+    ],
+    ids=["without-constant", "large-decorator"],
+)
+def test_index_keeps_decorators_with_python_definitions(
+    tmp_path: Path, db_path: Path, preamble: str, decorator: str
+) -> None:
+    source = preamble + decorator + "def consume():\n    return LIMIT\n"
+
+    match = _indexed_consume(tmp_path, db_path, source)
+
+    assert match["start_line"] == 1
+    assert match["code_content"].splitlines() == source.splitlines()

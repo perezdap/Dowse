@@ -369,3 +369,16 @@ def test_cli_status_smart_default_db(sample_repo: Path) -> None:
     out = json.loads(r.stdout)
     assert out["exists"] is True
     assert out["db_path"].replace("\\", "/").endswith("sample_repo/.dowse_index")
+
+
+def test_status_stale_after_extractor_changes(sample_repo: Path, db_path: Path) -> None:
+    """An index built by an older extractor is stale even when no source file changed."""
+    service.run_index(path=sample_repo, db=db_path, reset=True)
+    meta_path = db_path / "dowse-meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    del meta["extractor_version"]
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    status = service.run_index_status(db=db_path, root=sample_repo)
+
+    assert status["stale"] is True

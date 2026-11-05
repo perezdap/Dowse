@@ -11,12 +11,17 @@ from pathlib import Path
 import subprocess
 import symtable
 from typing import Callable, Iterable
+import warnings
 
 import pathspec
 from tree_sitter import Language, Parser
 
 from .definitions import DEFINITION_EXTRACTORS, definition_extensions, definition_languages
 from .models import Symbol
+
+# Bump when extraction output changes for unchanged source, so `dowse status`
+# reports indexes built by an older extractor as stale.
+EXTRACTOR_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # Language registry
@@ -59,6 +64,9 @@ class LangSpec:
     # `name` field), so it works for grammars that carry the name off the
     # standard `name` field.
     qualifier_types: frozenset[str] = frozenset()
+    # Returns the node where a definition's snippet starts, so a language can
+    # keep leading declarations with it. None starts at the definition node.
+    context_start: Callable[[object, bytes], object] | None = None
 
 
 # (extensions, grammar module, def node types, class node types, name child
@@ -134,11 +142,142 @@ _RAW_SPECS = {
     ),
 }
 
+_MAX_CONTEXT_BYTES = 1200  # Bound declaration context independently of the function body.
+_FUTURE_ANNOTATIONS = "from __future__ import annotations\n"
+
+
+def _has_future_annotations(module, src: bytes) -> bool:
+    # Future imports must precede other statements, so the scan stops early.
+    for child in module.named_children:
+        if child.type == "future_import_statement":
+            names = child.children_by_field_name("name")
+            if any(src[n.start_byte:n.end_byte] == b"annotations" for n in names):
+                return True
+        elif child.type == "expression_statement" and child.named_children[0].type == "string":
+            continue  # module docstring
+        elif child.type != "comment":
+            return False
+    return False
+
+
+def _loads_module_global(source: str, name: str, future_annotations: bool) -> bool:
+    # Scope analysis separates real global loads from parameters, locals,
+    # attributes and keywords that only share the constant's spelling.
+    if future_annotations:
+        # Postponed annotations are never evaluated, so they are not loads.
+        source = _FUTURE_ANNOTATIONS + source
+    try:
+        with warnings.catch_warnings():
+            # Compile warnings would name "<symbol>" instead of the indexed file.
+            warnings.simplefilter("ignore")
+            tables = [symtable.symtable(source, "<symbol>", "exec")]
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        # Unsupported, broken or too deeply nested code cannot be scoped; omit
+        # context rather than guess or stop the index run.
+        return False
+    while tables:
+        table = tables.pop()
+        if future_annotations and table.get_type() == "annotation":
+            continue
+        if name in table.get_identifiers():
+            symbol = table.lookup(name)
+            if symbol.is_referenced() and symbol.is_global():
+                return True
+        tables.extend(table.get_children())
+    return False
+
+
+def _augments_declared_global(definition, src: bytes, name: bytes) -> bool:
+    # Symbol tables record `global X; X += 1` only as a write, but it reads X.
+    scopes = [definition]
+    while scopes:
+        scope = scopes.pop()
+        scopes.extend(scope.children)
+        if scope.type not in ("function_definition", "class_definition"):
+            continue
+        declared = augmented = False
+        pending = list(scope.children)
+        while pending:
+            node = pending.pop()
+            if node.type == "global_statement":
+                declared |= any(src[n.start_byte:n.end_byte] == name for n in node.named_children)
+            elif node.type == "augmented_assignment":
+                left = node.child_by_field_name("left")
+                augmented |= left is not None and src[left.start_byte:left.end_byte] == name
+            if node.type not in ("function_definition", "class_definition", "lambda"):
+                pending.extend(node.children)
+        if declared and augmented:
+            return True
+    return False
+
+
+def _is_trailing_comment(comment) -> bool:
+    before = comment.prev_named_sibling
+    return before is not None and before.end_point[0] == comment.start_point[0]
+
+
+def _python_context_start(node, src: bytes):
+    # Decorators belong to the definition they wrap.
+    consumer = node.parent if node.parent.type == "decorated_definition" else node
+    if node.type != "function_definition" or consumer.parent.type != "module":
+        return consumer
+    # Keep a directly preceding constant with its consumer, so error strings
+    # and their explanation are searchable without indexing whole modules.
+    following = consumer
+    previous = following.prev_named_sibling
+    while previous is not None and previous.type == "comment":
+        if following.start_point[0] - previous.end_point[0] > 3:
+            return consumer
+        following = previous
+        previous = previous.prev_named_sibling
+    if previous is None or previous.type != "expression_statement":
+        return consumer
+    if following.start_point[0] - previous.end_point[0] > 3:
+        return consumer
+    assignment = previous.named_children[0]
+    if assignment.type != "assignment":
+        return consumer
+    name = assignment.child_by_field_name("left")
+    if name is None or name.type != "identifier":
+        return consumer
+    identifier = src[name.start_byte:name.end_byte]
+    if not identifier.isupper():
+        return consumer
+    # Cheap rejections run before scope analysis compiles the function.
+    if consumer.start_byte - previous.start_byte > _MAX_CONTEXT_BYTES:
+        return consumer
+    definition = src[consumer.start_byte:node.end_byte]
+    if identifier not in definition:
+        return consumer
+    future_annotations = _has_future_annotations(consumer.parent, src)
+    loads = _loads_module_global(
+        definition.decode("utf-8", "replace"), identifier.decode("utf-8", "replace"), future_annotations
+    )
+    if not loads and not _augments_declared_global(consumer, src, identifier):
+        return consumer
+
+    start = previous
+    previous = start.prev_named_sibling
+    while previous is not None and previous.type == "comment":
+        if start.start_point[0] - previous.end_point[0] > 1:
+            break
+        if consumer.start_byte - previous.start_byte > _MAX_CONTEXT_BYTES:
+            break
+        if _is_trailing_comment(previous):
+            break
+        start = previous
+        previous = start.prev_named_sibling
+    return start
+
+
 # Build the active registry (extension -> LangSpec), skipping uninstalled grammars.
 # qualifier_types is opt-in per language via this side table (only Rust needs
 # it today); keeping it out of the raw tuples avoids growing every entry.
 _QUALIFIER_TYPES: dict[str, frozenset[str]] = {
     "rust": frozenset({"impl_item"}),
+}
+_CONTEXT_STARTS: dict[str, Callable[[object, bytes], object]] = {
+    "python": _python_context_start,
 }
 _REGISTRY: dict[str, LangSpec] = {}
 _PARSERS: dict[str, Parser] = {}
@@ -148,7 +287,8 @@ for _lang, (_exts, _mod, _defs, _classes, _name_children, _extra) in _RAW_SPECS.
         continue
     spec = LangSpec(_lang, _loader, frozenset(_defs), frozenset(_classes),
                     frozenset(_name_children), extra=_extra,
-                    qualifier_types=_QUALIFIER_TYPES.get(_lang, frozenset()))
+                    qualifier_types=_QUALIFIER_TYPES.get(_lang, frozenset()),
+                    context_start=_CONTEXT_STARTS.get(_lang))
     for _ext in _exts:
         _REGISTRY[_ext] = spec
 
@@ -299,72 +439,6 @@ def _qualified_name(node, src: bytes, spec: LangSpec) -> str | None:
     return ".".join(reversed(parts))
 
 
-_MAX_CONTEXT_BYTES = 1200  # Bound declaration context independently of the function body.
-
-
-def _loads_module_global(source: bytes, name: str) -> bool:
-    # Scope analysis separates real global loads from parameters, locals,
-    # attributes and keywords that only share the constant's spelling.
-    try:
-        tables = [symtable.symtable(source.decode("utf-8", "replace"), "<symbol>", "exec")]
-    except (SyntaxError, ValueError):
-        # Newer or broken syntax cannot be scoped; omit context rather than guess.
-        return False
-    while tables:
-        table = tables.pop()
-        if name in table.get_identifiers():
-            symbol = table.lookup(name)
-            if symbol.is_referenced() and symbol.is_global():
-                return True
-        tables.extend(table.get_children())
-    return False
-
-
-def _python_context_start(node, src: bytes):
-    # Keep a directly preceding constant with its consumer, so error strings
-    # and their explanation are searchable without indexing whole modules.
-    if node.type != "function_definition":
-        return node
-    consumer = node.parent if node.parent.type == "decorated_definition" else node
-    if consumer.parent.type != "module":
-        return node
-    following = consumer
-    previous = following.prev_named_sibling
-    while previous is not None and previous.type == "comment":
-        if following.start_point[0] - previous.end_point[0] > 3:
-            return node
-        following = previous
-        previous = previous.prev_named_sibling
-    if previous is None or previous.type != "expression_statement":
-        return node
-    if following.start_point[0] - previous.end_point[0] > 3:
-        return node
-    assignment = previous.named_children[0]
-    if assignment.type != "assignment":
-        return node
-    name = assignment.child_by_field_name("left")
-    if name is None or name.type != "identifier":
-        return node
-    identifier = src[name.start_byte:name.end_byte]
-    if not identifier.isupper():
-        return node
-    if not _loads_module_global(src[consumer.start_byte:node.end_byte], identifier.decode()):
-        return node
-
-    start = previous
-    if node.start_byte - start.start_byte > _MAX_CONTEXT_BYTES:
-        return node
-    previous = start.prev_named_sibling
-    while previous is not None and previous.type == "comment":
-        if start.start_point[0] - previous.end_point[0] > 1:
-            break
-        if node.start_byte - previous.start_byte > _MAX_CONTEXT_BYTES:
-            break
-        start = previous
-        previous = start.prev_named_sibling
-    return start
-
-
 def extract_file(path: Path, root: Path, include_definitions: bool = False) -> list[Symbol]:
     """Parse one file into function/class/section symbols (or [] if unsupported)."""
     suffix = path.suffix.lower()
@@ -393,7 +467,7 @@ def extract_file(path: Path, root: Path, include_definitions: bool = False) -> l
             qname = _qualified_name(node, src, spec)
             if qname:
                 kind = "class" if node.type in spec.class_types else "function"
-                start = _python_context_start(node, src) if spec.name == "python" else node
+                start = spec.context_start(node, src) if spec.context_start else node
                 symbols.append(
                     Symbol(
                         file_path=rel,
