@@ -23,6 +23,7 @@ import dowse as dowse_pkg
 from ._dist import distribution_name
 from .embed import DEFAULT_MODEL, Embedder
 from .extract import (
+    EXTRACTOR_VERSION,
     extract_file,
     known_extensions,
     known_languages,
@@ -277,6 +278,7 @@ def _write_index_metadata(
 ) -> None:
     payload = {
         "version": 2,
+        "extractor_version": EXTRACTOR_VERSION,
         "root": str(root),
         "indexed_at": time.time(),
         "indexed_files": sorted(indexed_files),
@@ -392,7 +394,11 @@ def _read_index_status(db_path: Path, root: str | Path | None) -> dict:
         indexed_file_set = _metadata_file_set(metadata) or stored_file_set
         indexed_file_hashes = _metadata_file_hashes(metadata)
         indexed_extension_set = _metadata_extension_set(metadata)
-        if root is not None and (metadata is None or indexed_file_hashes is None):
+        if root is not None and (
+            metadata is None
+            or indexed_file_hashes is None
+            or metadata.get("extractor_version") != EXTRACTOR_VERSION
+        ):
             stale = True
         else:
             stale = (

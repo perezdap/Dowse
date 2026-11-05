@@ -18,6 +18,9 @@ class Symbol:
     start_line: int     # 1-based, inclusive
     end_line: int
     code_content: str
+    context_lines: int = 0  # Leading snippet lines moved after the body for embedding only.
 
     def to_fields(self) -> dict:
-        return asdict(self)
+        fields = asdict(self)
+        del fields["context_lines"]
+        return fields

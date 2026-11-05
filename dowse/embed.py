@@ -47,9 +47,19 @@ class Embedder:
 
     @staticmethod
     def _symbol_text(symbol) -> str:
-        # Prefix the qualified name so the symbol itself influences the vector,
-        # then the (capped) body. Helps match error messages naming a symbol.
-        body = symbol.code_content[:_MAX_CHARS]
+        # Keep the function ahead of its context so model truncation cannot
+        # discard body tokens that would survive without the added context.
+        body = symbol.code_content
+        context = ""
+        if symbol.context_lines:
+            # Tree-sitter rows count LF only, not Unicode separators or form feeds.
+            lines = body.split("\n", symbol.context_lines)
+            context = "\n".join(lines[:-1]) + "\n"
+            body = lines[-1]
+        body = body[:_MAX_CHARS]
+        remaining = _MAX_CHARS - len(body) - 1
+        if context and remaining > 0:
+            body += "\n" + context[:remaining]
         return f"{symbol.kind} {symbol.symbol_name}\n{body}"
 
     def embed_symbols(self, symbols) -> list[list[float]]:

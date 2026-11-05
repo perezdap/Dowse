@@ -7,6 +7,47 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Python module-level functions now retain a directly preceding uppercase
+  constant and its attached comments when the function uses that identifier.
+  This makes constant-backed error strings searchable. The contiguous context
+  prefix is capped at 1200 bytes, and snippet line ranges include that context.
+  Other languages and the index schema are unchanged.
+- Python snippets of decorated functions and classes now always start at the
+  first decorator. Decorators do not count against the constant-context cap.
+- Index metadata records an extractor version. `dowse status` and the Cursor
+  `sessionStart` hook report an index built by an older extractor as stale, so
+  existing indexes refresh without a source change.
+
+### Fixed
+- Retained constant context no longer pushes the function body out of the
+  embedding window. Embedding input puts the body first, while stored snippets
+  keep their original source order and line ranges. The extraction metadata
+  used for this ordering is not stored in the index schema.
+- Constant references now use Python scope analysis instead of matching every
+  identifier with the same spelling. Parameters, local bindings, attribute
+  names, keyword names, and write-only global declarations no longer attach
+  unrelated constant values. Code that cannot be scoped is left unchanged.
+- Scope analysis no longer stops an index run on deeply nested code, and it no
+  longer prints compile warnings that name `<symbol>` instead of the file.
+- `global X` followed by `X += 1` now counts as a read of the constant.
+  Annotations in a module with `from __future__ import annotations` do not.
+- A trailing comment of an unrelated statement no longer starts the retained
+  constant context.
+
+### Known limitations
+- Scope analysis uses the running interpreter's grammar. On Python 3.10 and
+  3.11, functions that use newer syntax, such as PEP 695 type parameters, get
+  no constant context.
+
+### Tested
+- Model-free index/query regressions cover constant-backed retrieval, decorated
+  functions, source line ranges, global reads, and unrelated or oversized
+  declarations. A bounded-encoder regression covers function-body truncation.
+- Added a manual real-model check for the six retrieval questions and the lock
+  error literal: `python -m scripts.evaluate_retrieval . --db ./.dowse_index`.
+  Compare revisions against the same source snapshot to keep the corpus fixed.
+
 ## [0.3.1] - 2026-08-22
 
 ### Fixed
